@@ -87,6 +87,7 @@ void MainComponent::prepareToPlay(int, double sampleRate)
     delayBuffer.setSize(2, maxDelaySamples);
     delayBuffer.clear();
     delayWritePosition = 0;
+    resetMutationOffsets();
 }
 
 void MainComponent::updateFilterCoeffs(double cutoff, double Q)
@@ -118,11 +119,58 @@ void MainComponent::updateFilterStatic()
     updateFilterCoeffs(cutoffHz, resonanceQ);
 }
 
+void MainComponent::resetMutationOffsets()
+{
+    mutationDriveOffset.setTargetValue(0.0f);
+    mutationFilterOffset.setTargetValue(0.0f);
+    mutationChaosOffset.setTargetValue(0.0f);
+    mutationGlitchOffset.setTargetValue(0.0f);
+    mutationMorphOffset.setTargetValue(0.0f);
+
+    lastMutationDrive.store(0.0f);
+    lastMutationFilter.store(0.0f);
+    lastMutationChaos.store(0.0f);
+    lastMutationGlitch.store(0.0f);
+    mutationSamplesRemaining = 0;
+}
+
+void MainComponent::triggerMutation()
+{
+    if (mutationDepth <= 0.0f)
+    {
+        resetMutationOffsets();
+        return;
+    }
+
+    auto randomRange = [this](float scale)
+    {
+        return (random.nextFloat() * 2.0f - 1.0f) * mutationDepth * scale;
+    };
+
+    const float driveDelta = juce::jlimit(-1.0f, 1.0f, randomRange(0.7f));
+    const float filterDelta = juce::jlimit(-0.8f, 0.8f, randomRange(0.8f));
+    const float chaosDelta = juce::jlimit(-1.0f, 1.0f, randomRange(1.0f));
+    const float glitchDelta = juce::jlimit(-1.0f, 1.0f, randomRange(1.2f));
+    const float morphDelta = juce::jlimit(-0.6f, 0.6f, randomRange(0.6f));
+
+    mutationDriveOffset.setTargetValue(driveDelta);
+    mutationFilterOffset.setTargetValue(filterDelta);
+    mutationChaosOffset.setTargetValue(chaosDelta);
+    mutationGlitchOffset.setTargetValue(glitchDelta);
+    mutationMorphOffset.setTargetValue(morphDelta);
+
+    lastMutationDrive.store(driveDelta);
+    lastMutationFilter.store(filterDelta);
+    lastMutationChaos.store(chaosDelta);
+    lastMutationGlitch.store(glitchDelta);
+}
+
 void MainComponent::resetSmoothers(double sampleRate)
 {
     const double fastRampSeconds = 0.02;
     const double filterRampSeconds = 0.06;
     const double spatialRampSeconds = 0.1;
+    const double mutationRampSeconds = 0.3;
 
     frequencySmoothed.reset(sampleRate, fastRampSeconds);
     gainSmoothed.reset(sampleRate, fastRampSeconds);
@@ -131,6 +179,11 @@ void MainComponent::resetSmoothers(double sampleRate)
     stereoWidthSmoothed.reset(sampleRate, spatialRampSeconds);
     lfoDepthSmoothed.reset(sampleRate, spatialRampSeconds);
     driveSmoothed.reset(sampleRate, fastRampSeconds);
+    mutationDriveOffset.reset(sampleRate, mutationRampSeconds);
+    mutationFilterOffset.reset(sampleRate, mutationRampSeconds);
+    mutationChaosOffset.reset(sampleRate, mutationRampSeconds);
+    mutationGlitchOffset.reset(sampleRate, mutationRampSeconds);
+    mutationMorphOffset.reset(sampleRate, mutationRampSeconds);
 
     frequencySmoothed.setCurrentAndTargetValue(targetFrequency);
     gainSmoothed.setCurrentAndTargetValue(outputGain);
@@ -139,6 +192,11 @@ void MainComponent::resetSmoothers(double sampleRate)
     stereoWidthSmoothed.setCurrentAndTargetValue(stereoWidth);
     lfoDepthSmoothed.setCurrentAndTargetValue(lfoDepth);
     driveSmoothed.setCurrentAndTargetValue(driveAmount);
+    mutationDriveOffset.setCurrentAndTargetValue(0.0f);
+    mutationFilterOffset.setCurrentAndTargetValue(0.0f);
+    mutationChaosOffset.setCurrentAndTargetValue(0.0f);
+    mutationGlitchOffset.setCurrentAndTargetValue(0.0f);
+    mutationMorphOffset.setCurrentAndTargetValue(0.0f);
 
     filterL.reset();
     filterR.reset();
@@ -186,12 +244,14 @@ void MainComponent::getNextAudioBlock(const juce::AudioSourceChannelInfo& buffer
     const float crushAmt = juce::jlimit(0.0f, 1.0f, crushAmount);
     const float subMixAmt = juce::jlimit(0.0f, 1.0f, subMixAmount);
     const float envFilterAmt = juce::jlimit(-1.0f, 1.0f, envFilterAmount);
-    const float chaosAmt = juce::jlimit(0.0f, 1.0f, chaosAmount);
+    const float chaosBase = juce::jlimit(0.0f, 1.0f, chaosAmount);
     const float delayAmtLocal = juce::jlimit(0.0f, 1.0f, delayAmount);
-    const float autoPanAmt = juce::jlimit(0.0f, 1.0f, autoPanAmount);
-    const float glitchProbLocal = juce::jlimit(0.0f, 1.0f, glitchProbability);
-    const float delayMix = juce::jmap(delayAmtLocal, 0.0f, 1.0f, 0.0f, 0.65f);
-    const float delayFeedback = juce::jmap(delayAmtLocal, 0.0f, 1.0f, 0.05f, 0.88f);
+    const float autoPanBase = juce::jlimit(0.0f, 1.0f, autoPanAmount);
+    const float glitchBase = juce::jlimit(0.0f, 1.0f, glitchProbability);
+    const float delayMixBase = juce::jmap(delayAmtLocal, 0.0f, 1.0f, 0.0f, 0.65f);
+    const float delayFeedbackBase = juce::jmap(delayAmtLocal, 0.0f, 1.0f, 0.05f, 0.88f);
+    const bool mutationActive = mutationDepth > 0.0f && mutationRateHz > 0.0f;
+    const int mutationSpan = mutationActive ? juce::jmax(1, (int)std::round(currentSR / juce::jmax(0.01f, mutationRateHz))) : 0;
     const int delaySamples = (maxDelaySamples > 1)
         ? juce::jlimit(1, maxDelaySamples - 1,
             (int)std::round(juce::jmap((double)delayAmtLocal, 0.0, 1.0,
@@ -204,6 +264,19 @@ void MainComponent::getNextAudioBlock(const juce::AudioSourceChannelInfo& buffer
         if (!audioEnabled && amplitudeEnvelope.isActive())
             amplitudeEnvelope.noteOff();
 
+        if (mutationActive)
+        {
+            if (--mutationSamplesRemaining <= 0)
+            {
+                mutationSamplesRemaining = mutationSpan;
+                triggerMutation();
+            }
+        }
+        else if (mutationSamplesRemaining != 0)
+        {
+            resetMutationOffsets();
+        }
+
         const float baseFrequency = frequencySmoothed.getNextValue();
         const float gain = gainSmoothed.getNextValue() * currentVelocity;
         const float depth = lfoDepthSmoothed.getNextValue();
@@ -211,7 +284,22 @@ void MainComponent::getNextAudioBlock(const juce::AudioSourceChannelInfo& buffer
         const float baseCutoff = cutoffSmoothed.getNextValue();
         const float baseResonance = resonanceSmoothed.getNextValue();
         const float ampEnv = amplitudeEnvelope.getNextSample();
-        const float drive = driveSmoothed.getNextValue();
+        const float driveBase = driveSmoothed.getNextValue();
+        const float driveOffset = mutationDriveOffset.getNextValue();
+        const float drive = juce::jlimit(0.0f, 1.4f, driveBase + driveOffset);
+        const float cutoffOffset = mutationFilterOffset.getNextValue();
+        const float mutatedCutoff = juce::jlimit(50.0f, 18000.0f, baseCutoff * (1.0f + cutoffOffset));
+        float chaosAmt = juce::jlimit(0.0f, 1.0f, chaosBase + mutationChaosOffset.getNextValue());
+        float glitchProb = juce::jlimit(0.0f, 1.0f, glitchBase + mutationGlitchOffset.getNextValue());
+        const float morphOffset = mutationMorphOffset.getNextValue();
+        const float morph = juce::jlimit(0.0f, 1.0f, waveMorph + morphOffset);
+
+        const float biosense = juce::jlimit(0.0f, 1.0f, bioSensorAmount * ampEnv);
+        const float autoPanAmt = juce::jlimit(0.0f, 1.4f, autoPanBase + biosense * 0.6f);
+        const float delayMix = juce::jlimit(0.0f, 0.9f, delayMixBase + biosense * 0.35f);
+        const float delayFeedback = juce::jlimit(0.05f, 0.95f, delayFeedbackBase + biosense * 0.35f);
+        chaosAmt = juce::jlimit(0.0f, 1.0f, chaosAmt + biosense * 0.4f);
+        glitchProb = juce::jlimit(0.0f, 1.0f, glitchProb + biosense * 0.35f);
 
         float lfoS = std::sin(lfoPhase);
         float vibrato = 1.0f + (depth * lfoS);
@@ -249,16 +337,17 @@ void MainComponent::getNextAudioBlock(const juce::AudioSourceChannelInfo& buffer
         if (subPhase >= juce::MathConstants<float>::twoPi) subPhase -= juce::MathConstants<float>::twoPi;
         if (detunePhase >= juce::MathConstants<float>::twoPi) detunePhase -= juce::MathConstants<float>::twoPi;
 
-        float primary = renderMorphSample(phase, waveMorph);
-        float subSample = renderMorphSample(subPhase, waveMorph);
-        float detuneSample = renderMorphSample(detunePhase, waveMorph);
+        float primary = renderMorphSample(phase, morph);
+        float subSample = renderMorphSample(subPhase, morph);
+        float detuneSample = renderMorphSample(detunePhase, morph);
         float combined = juce::jmap(subMixAmt, primary, 0.5f * (primary + subSample + detuneSample));
         float s = combined * gain;
 
         if (drive > 0.0f)
         {
             float shaped = std::tanh(s * (1.0f + drive * 10.0f));
-            s = juce::jmap(drive, 0.0f, 1.0f, s, shaped);
+            float driveBlend = juce::jlimit(0.0f, 1.0f, drive);
+            s = juce::jmap(driveBlend, 0.0f, 1.0f, s, shaped);
         }
 
         if (++filterUpdateCount >= filterUpdateStep)
@@ -266,7 +355,7 @@ void MainComponent::getNextAudioBlock(const juce::AudioSourceChannelInfo& buffer
             filterUpdateCount = 0;
             const double modFactor = std::pow(2.0, (double)lfoCutModAmt * (double)lfoS);
             const double envFactor = juce::jlimit(0.1, 4.0, 1.0 + (double)envFilterAmt * (double)ampEnv);
-            const double effCut = juce::jlimit(80.0, 14000.0, (double)baseCutoff * modFactor * envFactor);
+            const double effCut = juce::jlimit(80.0, 14000.0, (double)mutatedCutoff * modFactor * envFactor);
             updateFilterCoeffs(effCut, (double)baseResonance);
         }
 
@@ -311,7 +400,7 @@ void MainComponent::getNextAudioBlock(const juce::AudioSourceChannelInfo& buffer
 
         float wetL = 0.0f;
         float wetR = 0.0f;
-        if (delayAmtLocal > 0.0f && maxDelaySamples > 1)
+        if ((delayAmtLocal > 0.0f || biosense > 0.0f) && maxDelaySamples > 1)
         {
             const int readPos = (delayWritePosition - delaySamples + maxDelaySamples) % maxDelaySamples;
             wetL = delayBuffer.getSample(0, readPos);
@@ -331,7 +420,7 @@ void MainComponent::getNextAudioBlock(const juce::AudioSourceChannelInfo& buffer
             delayWritePosition = (delayWritePosition + 1) % maxDelaySamples;
         }
 
-        if (glitchProbLocal > 0.0f)
+        if (glitchProb > 0.0f)
         {
             if (glitchSamplesRemaining > 0)
             {
@@ -339,9 +428,9 @@ void MainComponent::getNextAudioBlock(const juce::AudioSourceChannelInfo& buffer
                 dryL = glitchHeldL;
                 dryR = glitchHeldR;
             }
-            else if (random.nextFloat() < glitchProbLocal * 0.004f)
+            else if (random.nextFloat() < glitchProb * 0.004f)
             {
-                glitchSamplesRemaining = juce::jmax(4, (int)std::round(juce::jmap(glitchProbLocal, 0.0f, 1.0f,
+                glitchSamplesRemaining = juce::jmax(4, (int)std::round(juce::jmap(glitchProb, 0.0f, 1.0f,
                     12.0f,
                     (float)currentSR * 0.08f)));
                 glitchHeldL = dryL;
@@ -529,6 +618,26 @@ void MainComponent::paint(juce::Graphics& g)
 void MainComponent::timerCallback()
 {
     captureWaveformSnapshot();
+    juce::String status;
+    if (mutationDepth <= 0.0f)
+    {
+        status = "Mutation Engine: dormant";
+    }
+    else
+    {
+        status = juce::String::formatted(
+            "Mutation Engine: drive %+0.0f%% | filter %+0.0f%% | chaos %+0.0f%% | glitch %+0.0f%% @ %.2f Hz",
+            lastMutationDrive.load() * 100.0f,
+            lastMutationFilter.load() * 100.0f,
+            lastMutationChaos.load() * 100.0f,
+            lastMutationGlitch.load() * 100.0f,
+            mutationRateHz);
+
+        if (bioSensorAmount > 0.0f)
+            status += juce::String::formatted(" | bio %.0f%%", bioSensorAmount * 100.0f);
+    }
+
+    mutationStatusLabel.setText(status, juce::dontSendNotification);
     repaint();
 }
 
@@ -567,11 +676,14 @@ void MainComponent::resized()
     auto area = getLocalBounds().reduced(headerMargin);
 
     auto bar = area.removeFromTop(headerBarHeight);
+    auto statusArea = bar;
+    statusArea.removeFromRight(audioButtonWidth + 12);
+    mutationStatusLabel.setBounds(statusArea.reduced(4, 0));
     audioToggle.setBounds(bar.getRight() - audioButtonWidth, bar.getY() + 4, audioButtonWidth, audioButtonHeight);
 
     auto strip = area.removeFromTop(controlStripHeight);
     const int knob = knobSize;
-    const int numKnobs = 21;
+    const int numKnobs = 24;
     const int colWidth = strip.getWidth() / numKnobs;
 
     struct Item { juce::Label* L; juce::Slider* S; juce::Label* V; };
@@ -596,7 +708,10 @@ void MainComponent::resized()
         { &chaosLabel, &chaosKnob, &chaosValueLabel },
         { &delayLabel, &delayKnob, &delayValue },
         { &autoPanLabel, &autoPanKnob, &autoPanValue },
-        { &glitchLabel, &glitchKnob, &glitchValue }
+        { &glitchLabel, &glitchKnob, &glitchValue },
+        { &mutationRateLabel, &mutationRateKnob, &mutationRateValue },
+        { &mutationDepthLabel, &mutationDepthKnob, &mutationDepthValue },
+        { &bioSensorLabel, &bioSensorKnob, &bioSensorValue }
     };
 
     const int labelH = 14;
@@ -641,6 +756,10 @@ void MainComponent::resized()
 
 void MainComponent::initialiseUi()
 {
+    mutationStatusLabel.setJustificationType(juce::Justification::left);
+    mutationStatusLabel.setColour(juce::Label::textColourId, juce::Colours::white);
+    mutationStatusLabel.setText("Mutation Engine: dormant", juce::dontSendNotification);
+    addAndMakeVisible(mutationStatusLabel);
     initialiseSliders();
     initialiseToggle();
 }
@@ -651,12 +770,18 @@ void MainComponent::initialiseSliders()
     waveKnob.setRange(0.0, 1.0);
     waveKnob.setValue(0.0);
     addAndMakeVisible(waveKnob);
-    configureCaptionLabel(waveLabel, "Waveform");
+    configureCaptionLabel(waveLabel, "Organism Morph");
     configureValueLabel(waveValue);
     waveKnob.onValueChange = [this]
     {
         waveMorph = (float)waveKnob.getValue();
-        waveValue.setText(juce::String(waveMorph, 2), juce::dontSendNotification);
+        juce::String descriptor;
+        const float m = waveMorph;
+        if (m < 0.25f)      descriptor = "Sine bloom";
+        else if (m < 0.5f) descriptor = "Tri fracture";
+        else if (m < 0.75f)descriptor = "Saw shards";
+        else                descriptor = "Square scorch";
+        waveValue.setText(descriptor, juce::dontSendNotification);
     };
     waveKnob.onValueChange();
 
@@ -664,7 +789,7 @@ void MainComponent::initialiseSliders()
     gainKnob.setRange(0.0, 1.0);
     gainKnob.setValue(outputGain);
     addAndMakeVisible(gainKnob);
-    configureCaptionLabel(gainLabel, "Gain");
+    configureCaptionLabel(gainLabel, "Output Ritual");
     configureValueLabel(gainValue);
     gainKnob.onValueChange = [this]
     {
@@ -679,7 +804,7 @@ void MainComponent::initialiseSliders()
     attackKnob.setSkewFactorFromMidPoint(40.0);
     attackKnob.setValue(attackMs);
     addAndMakeVisible(attackKnob);
-    configureCaptionLabel(attackLabel, "Attack");
+    configureCaptionLabel(attackLabel, "Surge");
     configureValueLabel(attackValue);
     attackKnob.onValueChange = [this]
     {
@@ -694,7 +819,7 @@ void MainComponent::initialiseSliders()
     decayKnob.setSkewFactorFromMidPoint(200.0);
     decayKnob.setValue(decayMs);
     addAndMakeVisible(decayKnob);
-    configureCaptionLabel(decayLabel, "Decay");
+    configureCaptionLabel(decayLabel, "Collapse");
     configureValueLabel(decayValue);
     decayKnob.onValueChange = [this]
     {
@@ -708,7 +833,7 @@ void MainComponent::initialiseSliders()
     sustainKnob.setRange(0.0, 1.0, 0.01);
     sustainKnob.setValue(sustainLevel);
     addAndMakeVisible(sustainKnob);
-    configureCaptionLabel(sustainLabel, "Sustain");
+    configureCaptionLabel(sustainLabel, "Hold");
     configureValueLabel(sustainValue);
     sustainKnob.onValueChange = [this]
     {
@@ -722,7 +847,7 @@ void MainComponent::initialiseSliders()
     widthKnob.setRange(0.0, 2.0, 0.01);
     widthKnob.setValue(stereoWidth);
     addAndMakeVisible(widthKnob);
-    configureCaptionLabel(widthLabel, "Width");
+    configureCaptionLabel(widthLabel, "Stereo Rift");
     configureValueLabel(widthValue);
     widthKnob.onValueChange = [this]
     {
@@ -737,7 +862,7 @@ void MainComponent::initialiseSliders()
     pitchKnob.setSkewFactorFromMidPoint(440.0);
     pitchKnob.setValue(220.0);
     addAndMakeVisible(pitchKnob);
-    configureCaptionLabel(pitchLabel, "Pitch");
+    configureCaptionLabel(pitchLabel, "Root Frequency");
     configureValueLabel(pitchValue);
     pitchKnob.onValueChange = [this]
     {
@@ -751,7 +876,7 @@ void MainComponent::initialiseSliders()
     cutoffKnob.setSkewFactorFromMidPoint(1000.0);
     cutoffKnob.setValue(cutoffHz);
     addAndMakeVisible(cutoffKnob);
-    configureCaptionLabel(cutoffLabel, "Cutoff");
+    configureCaptionLabel(cutoffLabel, "Filter Veil");
     configureValueLabel(cutoffValue);
     cutoffKnob.onValueChange = [this]
     {
@@ -767,7 +892,7 @@ void MainComponent::initialiseSliders()
     resonanceKnob.setSkewFactorFromMidPoint(0.707);
     resonanceKnob.setValue(resonanceQ);
     addAndMakeVisible(resonanceKnob);
-    configureCaptionLabel(resonanceLabel, "Resonance (Q)");
+    configureCaptionLabel(resonanceLabel, "Resonance Fang");
     configureValueLabel(resonanceValue);
     resonanceKnob.onValueChange = [this]
     {
@@ -784,7 +909,7 @@ void MainComponent::initialiseSliders()
     releaseKnob.setSkewFactorFromMidPoint(200.0);
     releaseKnob.setValue(releaseMs);
     addAndMakeVisible(releaseKnob);
-    configureCaptionLabel(releaseLabel, "Release");
+    configureCaptionLabel(releaseLabel, "Release Trail");
     configureValueLabel(releaseValue);
     releaseKnob.onValueChange = [this]
     {
@@ -798,7 +923,7 @@ void MainComponent::initialiseSliders()
     lfoKnob.setRange(0.05, 15.0);
     lfoKnob.setValue(lfoRateHz);
     addAndMakeVisible(lfoKnob);
-    configureCaptionLabel(lfoLabel, "LFO Rate");
+    configureCaptionLabel(lfoLabel, "Orbit Rate");
     configureValueLabel(lfoValue);
     lfoKnob.onValueChange = [this]
     {
@@ -811,7 +936,7 @@ void MainComponent::initialiseSliders()
     lfoDepthKnob.setRange(0.0, 1.0);
     lfoDepthKnob.setValue(lfoDepth);
     addAndMakeVisible(lfoDepthKnob);
-    configureCaptionLabel(lfoDepthLabel, "LFO Depth");
+    configureCaptionLabel(lfoDepthLabel, "Orbit Depth");
     configureValueLabel(lfoDepthValue);
     lfoDepthKnob.onValueChange = [this]
     {
@@ -825,7 +950,7 @@ void MainComponent::initialiseSliders()
     filterModKnob.setRange(0.0, 1.0, 0.001);
     filterModKnob.setValue(lfoCutModAmt);
     addAndMakeVisible(filterModKnob);
-    configureCaptionLabel(filterModLabel, "Filter Mod");
+    configureCaptionLabel(filterModLabel, "Orbit→Filter");
     configureValueLabel(filterModValue);
     filterModKnob.onValueChange = [this]
     {
@@ -852,7 +977,7 @@ void MainComponent::initialiseSliders()
     crushKnob.setRange(0.0, 1.0);
     crushKnob.setValue(crushAmount);
     addAndMakeVisible(crushKnob);
-    configureCaptionLabel(crushLabel, "Crush");
+    configureCaptionLabel(crushLabel, "Bitrot");
     configureValueLabel(crushValue);
     crushKnob.onValueChange = [this]
     {
@@ -865,7 +990,7 @@ void MainComponent::initialiseSliders()
     subMixKnob.setRange(0.0, 1.0);
     subMixKnob.setValue(subMixAmount);
     addAndMakeVisible(subMixKnob);
-    configureCaptionLabel(subMixLabel, "Sub Mix");
+    configureCaptionLabel(subMixLabel, "Sub Merge");
     configureValueLabel(subMixValue);
     subMixKnob.onValueChange = [this]
     {
@@ -878,7 +1003,7 @@ void MainComponent::initialiseSliders()
     envFilterKnob.setRange(-1.0, 1.0, 0.01);
     envFilterKnob.setValue(envFilterAmount);
     addAndMakeVisible(envFilterKnob);
-    configureCaptionLabel(envFilterLabel, "Env->Filter");
+    configureCaptionLabel(envFilterLabel, "Env→Filter");
     configureValueLabel(envFilterValue);
     envFilterKnob.onValueChange = [this]
     {
@@ -891,7 +1016,7 @@ void MainComponent::initialiseSliders()
     chaosKnob.setRange(0.0, 1.0);
     chaosKnob.setValue(chaosAmount);
     addAndMakeVisible(chaosKnob);
-    configureCaptionLabel(chaosLabel, "Chaos");
+    configureCaptionLabel(chaosLabel, "Chaos Warp");
     configureValueLabel(chaosValueLabel);
     chaosKnob.onValueChange = [this]
     {
@@ -904,7 +1029,7 @@ void MainComponent::initialiseSliders()
     delayKnob.setRange(0.0, 1.0);
     delayKnob.setValue(delayAmount);
     addAndMakeVisible(delayKnob);
-    configureCaptionLabel(delayLabel, "Delay");
+    configureCaptionLabel(delayLabel, "Feedback Halo");
     configureValueLabel(delayValue);
     delayKnob.onValueChange = [this]
     {
@@ -917,7 +1042,7 @@ void MainComponent::initialiseSliders()
     autoPanKnob.setRange(0.0, 1.0);
     autoPanKnob.setValue(autoPanAmount);
     addAndMakeVisible(autoPanKnob);
-    configureCaptionLabel(autoPanLabel, "Auto-Pan");
+    configureCaptionLabel(autoPanLabel, "Auto Orbit");
     configureValueLabel(autoPanValue);
     autoPanKnob.onValueChange = [this]
     {
@@ -930,7 +1055,7 @@ void MainComponent::initialiseSliders()
     glitchKnob.setRange(0.0, 1.0);
     glitchKnob.setValue(glitchProbability);
     addAndMakeVisible(glitchKnob);
-    configureCaptionLabel(glitchLabel, "Glitch");
+    configureCaptionLabel(glitchLabel, "Glitch Hold");
     configureValueLabel(glitchValue);
     glitchKnob.onValueChange = [this]
     {
@@ -938,6 +1063,49 @@ void MainComponent::initialiseSliders()
         glitchValue.setText(juce::String(glitchProbability * 100.0f, 0) + "%", juce::dontSendNotification);
     };
     glitchKnob.onValueChange();
+
+    configureRotarySlider(mutationRateKnob);
+    mutationRateKnob.setRange(0.1, 8.0);
+    mutationRateKnob.setSkewFactorFromMidPoint(0.8);
+    mutationRateKnob.setValue(mutationRateHz);
+    addAndMakeVisible(mutationRateKnob);
+    configureCaptionLabel(mutationRateLabel, "Mutation Pulse");
+    configureValueLabel(mutationRateValue);
+    mutationRateKnob.onValueChange = [this]
+    {
+        mutationRateHz = (float)mutationRateKnob.getValue();
+        mutationRateValue.setText(juce::String(mutationRateHz, 2) + " Hz", juce::dontSendNotification);
+        mutationSamplesRemaining = 0;
+    };
+    mutationRateKnob.onValueChange();
+
+    configureRotarySlider(mutationDepthKnob);
+    mutationDepthKnob.setRange(0.0, 1.0);
+    mutationDepthKnob.setValue(mutationDepth);
+    addAndMakeVisible(mutationDepthKnob);
+    configureCaptionLabel(mutationDepthLabel, "Mutation Depth");
+    configureValueLabel(mutationDepthValue);
+    mutationDepthKnob.onValueChange = [this]
+    {
+        mutationDepth = (float)mutationDepthKnob.getValue();
+        mutationDepthValue.setText(juce::String(mutationDepth * 100.0f, 0) + "%", juce::dontSendNotification);
+        if (mutationDepth <= 0.0f)
+            resetMutationOffsets();
+    };
+    mutationDepthKnob.onValueChange();
+
+    configureRotarySlider(bioSensorKnob);
+    bioSensorKnob.setRange(0.0, 1.0);
+    bioSensorKnob.setValue(bioSensorAmount);
+    addAndMakeVisible(bioSensorKnob);
+    configureCaptionLabel(bioSensorLabel, "Bio-Sense");
+    configureValueLabel(bioSensorValue);
+    bioSensorKnob.onValueChange = [this]
+    {
+        bioSensorAmount = (float)bioSensorKnob.getValue();
+        bioSensorValue.setText(juce::String(bioSensorAmount * 100.0f, 0) + "%", juce::dontSendNotification);
+    };
+    bioSensorKnob.onValueChange();
 }
 
 void MainComponent::initialiseToggle()
@@ -947,14 +1115,15 @@ void MainComponent::initialiseToggle()
     audioToggle.onClick = [this]
     {
         audioEnabled = audioToggle.getToggleState();
-        audioToggle.setButtonText(audioEnabled ? "Audio ON" : "Audio OFF");
+        audioToggle.setButtonText(audioEnabled ? "Signal: ON" : "Signal: OFF");
         if (!audioEnabled)
         {
             midiGate = false;
             amplitudeEnvelope.noteOff();
+            resetMutationOffsets();
         }
     };
-    audioToggle.setButtonText("Audio ON");
+    audioToggle.setButtonText("Signal: ON");
     addAndMakeVisible(audioToggle);
 }
 
