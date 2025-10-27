@@ -1,0 +1,6 @@
+Builds/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+.vs/
