@@ -1,6 +1,5 @@
 #pragma once
 #include <JuceHeader.h>
-#include <atomic>
 #include <deque>
 #include <vector>
 
@@ -43,11 +42,6 @@ private:
     juce::SmoothedValue<float> stereoWidthSmoothed;
     juce::SmoothedValue<float> lfoDepthSmoothed;
     juce::SmoothedValue<float> driveSmoothed;
-    juce::SmoothedValue<float> mutationDriveOffset;
-    juce::SmoothedValue<float> mutationFilterOffset;
-    juce::SmoothedValue<float> mutationChaosOffset;
-    juce::SmoothedValue<float> mutationGlitchOffset;
-    juce::SmoothedValue<float> mutationMorphOffset;
 
     // Output Gain
     float   outputGain = 0.5f;
@@ -59,9 +53,6 @@ private:
     float   delayAmount = 0.0f;
     float   autoPanAmount = 0.0f;
     float   glitchProbability = 0.0f;
-    float   mutationRateHz = 0.35f;
-    float   mutationDepth = 0.0f;
-    float   bioSensorAmount = 0.0f;
 
     // Filter (cutoff + resonance + per-channel IIR)
     float   cutoffHz = 1000.0f;
@@ -71,7 +62,6 @@ private:
     float   lfoCutModAmt = 0.0f;
     float   chaosValue = 0.0f;
     int     chaosSamplesRemaining = 0;
-    int     mutationSamplesRemaining = 0;
     juce::Random random;
 
     // Envelope
@@ -106,10 +96,6 @@ private:
     int glitchSamplesRemaining = 0;
     float glitchHeldL = 0.0f;
     float glitchHeldR = 0.0f;
-    std::atomic<float> lastMutationDrive { 0.0f };
-    std::atomic<float> lastMutationFilter { 0.0f };
-    std::atomic<float> lastMutationChaos { 0.0f };
-    std::atomic<float> lastMutationGlitch { 0.0f };
 
     // ===== UI Controls =====
     juce::Slider waveKnob, gainKnob, attackKnob, decayKnob, sustainKnob, widthKnob;
@@ -117,7 +103,6 @@ private:
     juce::Slider lfoKnob, lfoDepthKnob, filterModKnob;
     juce::Slider driveKnob, crushKnob, subMixKnob, envFilterKnob;
     juce::Slider chaosKnob, delayKnob, autoPanKnob, glitchKnob;
-    juce::Slider mutationRateKnob, mutationDepthKnob, bioSensorKnob;
 
     juce::Label waveLabel, waveValue;
     juce::Label gainLabel, gainValue;
@@ -140,12 +125,8 @@ private:
     juce::Label delayLabel, delayValue;
     juce::Label autoPanLabel, autoPanValue;
     juce::Label glitchLabel, glitchValue;
-    juce::Label mutationRateLabel, mutationRateValue;
-    juce::Label mutationDepthLabel, mutationDepthValue;
-    juce::Label bioSensorLabel, bioSensorValue;
-    juce::Label mutationStatusLabel;
 
-    juce::TextButton audioToggle{ "Signal: ON" };
+    juce::TextButton audioToggle{ "Audio ON" };
     bool audioEnabled = true;
 
     // ===== MIDI keyboard UI =====
@@ -178,8 +159,6 @@ private:
     void setTargetFrequency(float newFrequency, bool force = false);
     void updateFilterCoeffs(double cutoff, double Q);
     void updateFilterStatic();
-    void triggerMutation();
-    void resetMutationOffsets();
     inline float renderMorphSample(float ph, float morph) const;
     int findZeroCrossingIndex(int searchSpan) const;
     void captureWaveformSnapshot();
