@@ -1,5 +1,6 @@
 #include "MainComponent.h"
 #include <cmath>
+#include <algorithm>
 
 namespace
 {
@@ -24,6 +25,7 @@ MainComponent::MainComponent()
     setAudioChannels(0, 2);
 
     scopeBuffer.clear();
+    waveHistory.clear();
 
     ampEnvParams.attack = attackMs * 0.001f;
     ampEnvParams.decay = decayMs * 0.001f;
@@ -74,6 +76,7 @@ void MainComponent::prepareToPlay(int, double sampleRate)
     chaosSamplesRemaining = 0;
     glitchSamplesRemaining = 0;
     glitchHeldL = glitchHeldR = 0.0f;
+    waveHistory.clear();
     resetSmoothers(sampleRate);
     updateFilterStatic();
     amplitudeEnvelope.setSampleRate(sampleRate);
@@ -386,35 +389,172 @@ void MainComponent::paint(juce::Graphics& g)
 {
     g.fillAll(juce::Colours::black);
 
-    auto drawRect = scopeRect.isEmpty() ? getLocalBounds().reduced(24) : scopeRect;
-
-    g.setColour(juce::Colours::white.withAlpha(0.08f));
-    g.drawRoundedRectangle(drawRect.toFloat(), 8.0f, 1.0f);
-
-    g.setColour(juce::Colours::white);
-    juce::Path p;
-
-    const int start = findZeroCrossingIndex(scopeBuffer.getNumSamples() / 2);
-    const int W = drawRect.getWidth();
-    const int N = scopeBuffer.getNumSamples();
-    const float H = (float)drawRect.getHeight();
-    const float Y0 = (float)drawRect.getY();
-    const int X0 = drawRect.getX();
-
-    for (int x = 0; x < W; ++x)
+    if (!osc3DRect.isEmpty())
     {
-        const int i = (start + x) % N;
-        const float s = scopeBuffer.getSample(0, i);
-        const float y = juce::jmap(s, -1.0f, 1.0f, Y0 + H, Y0);
-        if (x == 0) p.startNewSubPath((float)X0, y);
-        else p.lineTo((float)(X0 + x), y);
+        auto visualBounds = osc3DRect.toFloat();
+        juce::ColourGradient background(
+            juce::Colour::fromRGB(6, 10, 24), visualBounds.getBottomLeft(),
+            juce::Colour::fromRGB(20, 34, 68), visualBounds.getTopRight(), false);
+        g.setGradientFill(background);
+        g.fillRoundedRectangle(visualBounds, 20.0f);
+
+        g.setColour(juce::Colours::white.withAlpha(0.12f));
+        g.drawRoundedRectangle(visualBounds, 20.0f, 1.5f);
+
+        auto plotArea = osc3DRect.reduced(24, 20);
+        if (plotArea.getWidth() > 8 && plotArea.getHeight() > 8)
+        {
+            const float baseWidth = (float)plotArea.getWidth();
+            const float baseHeight = (float)plotArea.getHeight();
+            const float centreX = (float)plotArea.getCentreX();
+            const float baseBottom = (float)plotArea.getBottom();
+
+            auto projectPoint = [&](float xNorm, float yNorm, float depthNorm)
+            {
+                const float clampedDepth = juce::jlimit(0.0f, 1.0f, depthNorm);
+                const float scale = juce::jmap(1.0f - clampedDepth, 0.55f, 1.0f);
+                const float skew = clampedDepth * baseWidth * 0.18f;
+                const float px = centreX + (xNorm - 0.5f) * baseWidth * scale - skew;
+                const float py = baseBottom - clampedDepth * baseHeight * 0.75f - yNorm * baseHeight * scale;
+                return juce::Point<float>(px, py);
+            };
+
+            juce::Path floor;
+            floor.startNewSubPath(projectPoint(0.0f, 1.0f, 0.0f));
+            floor.lineTo(projectPoint(1.0f, 1.0f, 0.0f));
+            floor.lineTo(projectPoint(1.0f, 1.0f, 1.0f));
+            floor.lineTo(projectPoint(0.0f, 1.0f, 1.0f));
+            floor.closeSubPath();
+            g.setColour(juce::Colours::white.withAlpha(0.03f));
+            g.fillPath(floor);
+
+            g.setColour(juce::Colours::white.withAlpha(0.05f));
+            const int depthLines = 6;
+            for (int d = 0; d <= depthLines; ++d)
+            {
+                const float depth = (float)d / (float)depthLines;
+                auto p1 = projectPoint(0.0f, 0.0f, depth);
+                auto p2 = projectPoint(1.0f, 0.0f, depth);
+                g.drawLine({ p1, p2 }, 1.0f);
+            }
+
+            const int verticalLines = 8;
+            for (int v = 0; v <= verticalLines; ++v)
+            {
+                const float x = (float)v / (float)verticalLines;
+                auto p1 = projectPoint(x, 0.0f, 0.0f);
+                auto p2 = projectPoint(x, 1.0f, 1.0f);
+                g.drawLine({ p1, p2 }, 1.0f);
+            }
+
+            if (!waveHistory.empty())
+            {
+                const size_t historyToDraw = juce::jmin<size_t>(waveHistory.size(), 90);
+                for (size_t layer = 0; layer < historyToDraw; ++layer)
+                {
+                    const auto& samples = waveHistory[layer];
+                    if (samples.size() < 2)
+                        continue;
+
+                    const float depth = (float)layer / (float)historyToDraw;
+                    juce::Path wavePath;
+
+                    for (size_t i = 0; i < samples.size(); ++i)
+                    {
+                        const float xNorm = samples.size() > 1 ? (float)i / (float)(samples.size() - 1) : 0.0f;
+                        const float yNorm = juce::jmap(samples[i], -1.0f, 1.0f, 1.0f, 0.0f);
+                        auto projected = projectPoint(xNorm, yNorm, depth);
+                        if (i == 0)
+                            wavePath.startNewSubPath(projected);
+                        else
+                            wavePath.lineTo(projected);
+                    }
+
+                    const float intensity = juce::jmap(1.0f - depth, 0.18f, 0.9f);
+                    juce::Colour colour = juce::Colour::fromFloatRGBA(0.2f, 0.85f, 1.0f, intensity);
+                    g.setColour(colour);
+                    g.strokePath(wavePath, juce::PathStrokeType(1.6f));
+                }
+
+                // Highlight the most recent layer for clarity.
+                const auto& latest = waveHistory.front();
+                if (latest.size() > 1)
+                {
+                    juce::Path latestPath;
+                    for (size_t i = 0; i < latest.size(); ++i)
+                    {
+                        const float xNorm = (float)i / (float)(latest.size() - 1);
+                        const float yNorm = juce::jmap(latest[i], -1.0f, 1.0f, 1.0f, 0.0f);
+                        auto projected = projectPoint(xNorm, yNorm, 0.0f);
+                        if (i == 0)
+                            latestPath.startNewSubPath(projected);
+                        else
+                            latestPath.lineTo(projected);
+                    }
+                    g.setColour(juce::Colour::fromFloatRGBA(0.7f, 1.0f, 1.0f, 0.95f));
+                    g.strokePath(latestPath, juce::PathStrokeType(2.4f));
+                }
+            }
+        }
     }
-    g.strokePath(p, juce::PathStrokeType(2.f));
+
+    if (!scopeRect.isEmpty())
+    {
+        auto drawRect = scopeRect;
+        g.setColour(juce::Colours::white.withAlpha(0.08f));
+        g.drawRoundedRectangle(drawRect.toFloat(), 8.0f, 1.0f);
+
+        g.setColour(juce::Colours::white.withAlpha(0.85f));
+        juce::Path p;
+
+        const int start = findZeroCrossingIndex(scopeBuffer.getNumSamples() / 2);
+        const int W = drawRect.getWidth();
+        const int N = scopeBuffer.getNumSamples();
+        const float H = (float)drawRect.getHeight();
+        const float Y0 = (float)drawRect.getY();
+        const int X0 = drawRect.getX();
+
+        for (int x = 0; x < W; ++x)
+        {
+            const int i = (start + x) % N;
+            const float s = scopeBuffer.getSample(0, i);
+            const float y = juce::jmap(s, -1.0f, 1.0f, Y0 + H, Y0);
+            if (x == 0) p.startNewSubPath((float)X0, y);
+            else p.lineTo((float)(X0 + x), y);
+        }
+        g.strokePath(p, juce::PathStrokeType(2.f));
+    }
 }
 
 void MainComponent::timerCallback()
 {
+    captureWaveformSnapshot();
     repaint();
+}
+
+void MainComponent::captureWaveformSnapshot()
+{
+    const int numSamples = scopeBuffer.getNumSamples();
+    if (numSamples <= 0)
+        return;
+
+    const int resolution = 160;
+    const int start = findZeroCrossingIndex(numSamples / 2);
+    const int step = juce::jmax(1, numSamples / resolution);
+
+    std::vector<float> snapshot;
+    snapshot.reserve((size_t)resolution);
+
+    for (int i = 0; i < resolution; ++i)
+    {
+        const int idx = (start + i * step) % numSamples;
+        snapshot.push_back(scopeBuffer.getSample(0, idx));
+    }
+
+    waveHistory.push_front(std::move(snapshot));
+    const size_t maxHistory = 90;
+    if (waveHistory.size() > maxHistory)
+        waveHistory.pop_back();
 }
 
 // ✅ FINAL DEFINITIVE FIX FOR ALL JUCE VERSIONS ✅
@@ -480,7 +620,23 @@ void MainComponent::resized()
     float keyW = juce::jlimit(16.0f, 40.0f, kbArea.getWidth() / 20.0f);
     keyboardComponent.setKeyWidth(keyW);
 
-    scopeRect = area.reduced(8, 8);
+    int desiredScopeHeight = kbArea.getHeight();
+    int availableHeight = area.getHeight();
+    int scopeHeight = std::min(desiredScopeHeight, availableHeight);
+    scopeHeight = std::max(scopeHeight, std::min(availableHeight, 80));
+    const int minVisualHeight = 180;
+    if (availableHeight - scopeHeight < minVisualHeight)
+        scopeHeight = std::max(std::min(availableHeight, 80), availableHeight - minVisualHeight);
+    scopeHeight = std::max(0, std::min(scopeHeight, availableHeight));
+
+    juce::Rectangle<int> scopeArea;
+    if (scopeHeight > 0)
+        scopeArea = area.removeFromBottom(scopeHeight);
+    else
+        scopeArea = {};
+
+    scopeRect = scopeArea.isEmpty() ? juce::Rectangle<int>() : scopeArea.reduced(8, 6);
+    osc3DRect = area.reduced(12, 12);
 }
 
 void MainComponent::initialiseUi()

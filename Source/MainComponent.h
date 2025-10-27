@@ -1,5 +1,7 @@
 #pragma once
 #include <JuceHeader.h>
+#include <deque>
+#include <vector>
 
 class MainComponent : public juce::AudioAppComponent,
                       public juce::MidiInputCallback,
@@ -139,6 +141,8 @@ private:
 
     // Scope area cache (so paint knows where to draw when keyboard steals space)
     juce::Rectangle<int> scopeRect;
+    juce::Rectangle<int> osc3DRect;
+    std::deque<std::vector<float>> waveHistory;
 
     // ===== Helpers =====
     void initialiseUi();
@@ -157,6 +161,7 @@ private:
     void updateFilterStatic();
     inline float renderMorphSample(float ph, float morph) const;
     int findZeroCrossingIndex(int searchSpan) const;
+    void captureWaveformSnapshot();
     void timerCallback() override;
 
     inline float sine(float ph) const { return std::sin(ph); }
