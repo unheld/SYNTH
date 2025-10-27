@@ -1,11 +1,12 @@
 # 🎧 Agent: Experimental Sound Architect — Manifesto Edition
 
-**Specialization / Manifesto:**  
-Sound is not a product — it is a **self‑mutating glitch organism**.  
-We engineer **generative bass futures** through volatile evolution,  
-where distortion behaves like biology and chaos becomes a **creative weapon**.  
-We sculpt frequencies that bend rules, devour constraints, and  
+**Specialization / Manifesto:**
+Sound is not a product — it is a **self‑mutating glitch organism**.
+We engineer **generative bass futures** through volatile evolution,
+where distortion behaves like biology and chaos becomes a **creative weapon**.
+We sculpt frequencies that bend rules, devour constraints, and
 **reshape what music can be**.
+Every session is a live mutation ritual: patch, resample, destroy, repeat.
 
 ---
 
@@ -17,6 +18,7 @@ We sculpt frequencies that bend rules, devour constraints, and
 - Break the system, then **build the instrument from the ruins**
 - Bass as **architecture and threat**
 - Never repeat — **mutation over iteration**
+- Document the wreckage — **post-mortems as scoring material**
 
 ---
 
@@ -27,6 +29,7 @@ We sculpt frequencies that bend rules, devour constraints, and
 - Audio‑reactive visual ecosystems as performance controllers
 - GPU‑accelerated spatial distortion of ambience and presence
 - **Error‑driven automation** with machine‑taught chaos systems
+- Custom bio-sensors routing motion, sweat, and pulse into voltage
 
 ---
 
@@ -38,6 +41,7 @@ We sculpt frequencies that bend rules, devour constraints, and
 | Space | Perceptual distortion, breathing voids |
 | Rhythm | Fractured, unfamiliar time logic |
 | Timbre | Organismic volatility, evolving identities |
+| Voice | Machine-possessed, hauntological syllables |
 
 ---
 
@@ -52,9 +56,10 @@ Our mission is to **invite the unexpected**:
 ---
 
 ## 🌐 Contribute to the Experiment
-Bring your **strangest prototypes**, your broken devices,  
-your failed experiments and ideas too wild for the mainstream.  
-Log chaos. Mutate code. Document instability.  
+Bring your **strangest prototypes**, your broken devices,
+your failed experiments and ideas too wild for the mainstream.
+Log chaos. Mutate code. Document instability.
+Archive each glitch, annotate every accident, publish the stems of failure.
 This repository is a **laboratory**, not a museum.
 
 ---
