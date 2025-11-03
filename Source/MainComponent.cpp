@@ -12,6 +12,11 @@ namespace
     constexpr int headerMargin = 16;
     constexpr int audioButtonWidth = 96;
     constexpr int audioButtonHeight = 28;
+    constexpr int toolbarButtonWidth = 72;
+    constexpr int toolbarButtonHeight = 28;
+    constexpr int toolbarSpacing = 8;
+    constexpr int bpmLabelWidth = 84;
+    constexpr int defaultBpmDisplay = 120;
     constexpr int controlStripHeight = 110;
     constexpr int knobSize = 48;
     constexpr int keyboardMinHeight = 60;
@@ -779,7 +784,33 @@ void MainComponent::resized()
     auto area = getLocalBounds().reduced(headerMargin);
 
     auto bar = area.removeFromTop(headerBarHeight);
-    audioToggle.setBounds(bar.getRight() - audioButtonWidth, bar.getY() + 4, audioButtonWidth, audioButtonHeight);
+
+    const int audioX = bar.getRight() - audioButtonWidth;
+    const int audioY = bar.getY() + (bar.getHeight() - audioButtonHeight) / 2;
+    audioToggle.setBounds(audioX, audioY, audioButtonWidth, audioButtonHeight);
+
+    int buttonX = bar.getX();
+    buttonX += headerMargin;
+    const int buttonY = bar.getY() + (bar.getHeight() - toolbarButtonHeight) / 2;
+    const int rightLimit = audioX - toolbarSpacing;
+
+    auto placeButton = [buttonY, rightLimit](juce::Component& component, int width, int& x)
+    {
+        const int available = rightLimit - x;
+        const int clampedWidth = available > 0 ? std::min(width, available) : 0;
+        component.setBounds(x, buttonY, clampedWidth, toolbarButtonHeight);
+        x += clampedWidth + toolbarSpacing;
+    };
+
+    placeButton(playButton, toolbarButtonWidth, buttonX);
+    placeButton(stopButton, toolbarButtonWidth, buttonX);
+    placeButton(restartButton, toolbarButtonWidth, buttonX);
+    placeButton(importButton, toolbarButtonWidth, buttonX);
+    placeButton(exportButton, toolbarButtonWidth, buttonX);
+
+    const int bpmAvailable = rightLimit - buttonX;
+    const int bpmWidth = bpmAvailable > 0 ? std::min(bpmLabelWidth, bpmAvailable) : 0;
+    bpmLabel.setBounds(buttonX, buttonY, bpmWidth, toolbarButtonHeight);
 
     auto strip = area.removeFromTop(controlStripHeight);
     const int knob = knobSize;
@@ -871,8 +902,82 @@ void MainComponent::resized()
 
 void MainComponent::initialiseUi()
 {
+    initialiseToolbar();
     initialiseSliders();
     initialiseToggle();
+}
+
+void MainComponent::initialiseToolbar()
+{
+    auto configureButton = [this](juce::TextButton& button)
+    {
+        button.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
+        button.setColour(juce::TextButton::buttonOnColourId, juce::Colours::transparentBlack);
+        button.setColour(juce::TextButton::textColourOffId, juce::Colours::white.withAlpha(0.9f));
+        button.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+        button.setColour(juce::TextButton::outlineColourId, juce::Colours::white.withAlpha(0.2f));
+        button.setWantsKeyboardFocus(false);
+        button.setMouseCursor(juce::MouseCursor::PointingHandCursor);
+        addAndMakeVisible(button);
+    };
+
+    auto updatePlayLabel = [this]()
+    {
+        const bool playing = midiRoll && midiRoll->isCurrentlyPlaying();
+        playButton.setButtonText(playing ? "Pause" : "Play");
+    };
+
+    configureButton(playButton);
+    configureButton(stopButton);
+    configureButton(restartButton);
+    configureButton(importButton);
+    configureButton(exportButton);
+
+    playButton.onClick = [this, updatePlayLabel]()
+    {
+        if (midiRoll)
+            midiRoll->togglePlayback();
+
+        updatePlayLabel();
+    };
+
+    stopButton.onClick = [this, updatePlayLabel]()
+    {
+        if (midiRoll)
+            midiRoll->stopPlayback();
+
+        updatePlayLabel();
+    };
+
+    restartButton.onClick = [this, updatePlayLabel]()
+    {
+        if (midiRoll)
+        {
+            midiRoll->stopPlayback();
+            midiRoll->startPlayback();
+        }
+
+        updatePlayLabel();
+    };
+
+    importButton.onClick = []
+    {
+        juce::Logger::outputDebugString("MIDI import requested");
+    };
+
+    exportButton.onClick = []
+    {
+        juce::Logger::outputDebugString("MIDI export requested");
+    };
+
+    bpmLabel.setText(juce::String(defaultBpmDisplay) + " BPM", juce::dontSendNotification);
+    bpmLabel.setJustificationType(juce::Justification::centred);
+    bpmLabel.setColour(juce::Label::textColourId, juce::Colours::white.withAlpha(0.85f));
+    bpmLabel.setFont(juce::Font(14.0f, juce::Font::bold));
+    bpmLabel.setBorderSize(juce::BorderSize<int>());
+    addAndMakeVisible(bpmLabel);
+
+    updatePlayLabel();
 }
 
 void MainComponent::initialiseSliders()

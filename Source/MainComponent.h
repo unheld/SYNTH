@@ -109,6 +109,13 @@ private:
     float glitchHeldR = 0.0f;
 
     // ===== UI Controls =====
+    juce::TextButton playButton { "Play" };
+    juce::TextButton stopButton { "Stop" };
+    juce::TextButton restartButton { "Restart" };
+    juce::TextButton importButton { "Import" };
+    juce::TextButton exportButton { "Export" };
+    juce::Label     bpmLabel;
+
     juce::Slider waveKnob, gainKnob, attackKnob, decayKnob, sustainKnob, widthKnob;
     juce::Slider pitchKnob, cutoffKnob, resonanceKnob, releaseKnob;
     juce::Slider lfoKnob, lfoDepthKnob, filterModKnob, lfoModeKnob, lfoStartKnob;
@@ -176,6 +183,7 @@ private:
     // ===== Helpers =====
     void initialiseUi();
     void initialiseSliders();
+    void initialiseToolbar();
     void initialiseToggle();
     void initialiseMidiInputs();
     void initialiseKeyboard();
