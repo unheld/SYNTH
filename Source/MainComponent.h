@@ -1,6 +1,5 @@
 #pragma once
 #include <JuceHeader.h>
-#include <deque>
 #include <vector>
 
 class MainComponent : public juce::AudioAppComponent,
@@ -142,7 +141,7 @@ private:
     // Scope area cache (so paint knows where to draw when keyboard steals space)
     juce::Rectangle<int> scopeRect;
     juce::Rectangle<int> osc3DRect;
-    std::deque<std::vector<float>> waveHistory;
+    std::vector<float> waveformSnapshot;
 
     // ===== Helpers =====
     void initialiseUi();
