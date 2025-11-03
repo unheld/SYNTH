@@ -2,6 +2,7 @@
 #include <JuceHeader.h>
 #include <deque>
 #include <vector>
+#include <atomic>
 
 class MainComponent : public juce::AudioAppComponent,
                       public juce::MidiInputCallback,
@@ -42,6 +43,12 @@ private:
     juce::SmoothedValue<float> stereoWidthSmoothed;
     juce::SmoothedValue<float> lfoDepthSmoothed;
     juce::SmoothedValue<float> driveSmoothed;
+    juce::SmoothedValue<float> mutationDriveOffset;
+    juce::SmoothedValue<float> mutationCutoffOffset;
+    juce::SmoothedValue<float> mutationChaosOffset;
+    juce::SmoothedValue<float> mutationGlitchOffset;
+    juce::SmoothedValue<float> mutationMorphOffset;
+    juce::SmoothedValue<float> bioSenseSmoothed;
 
     // Output Gain
     float   outputGain = 0.5f;
@@ -53,6 +60,9 @@ private:
     float   delayAmount = 0.0f;
     float   autoPanAmount = 0.0f;
     float   glitchProbability = 0.0f;
+    float   mutationRateHz = 0.35f;
+    float   mutationDepth = 0.45f;
+    float   bioSenseAmount = 0.0f;
 
     // Filter (cutoff + resonance + per-channel IIR)
     float   cutoffHz = 1000.0f;
@@ -96,6 +106,17 @@ private:
     int glitchSamplesRemaining = 0;
     float glitchHeldL = 0.0f;
     float glitchHeldR = 0.0f;
+    int mutationSamplesUntilNext = 0;
+    bool mutationIdle = true;
+    uint32_t mutationRevisionCounter = 0;
+    uint32_t mutationRevisionSeen = 0;
+    std::atomic<uint32_t> mutationRevision { 0 };
+    std::atomic<int> mutationActiveFlag { 0 };
+    std::atomic<float> mutationDrivePreview { 0.0f };
+    std::atomic<float> mutationCutoffPreview { 0.0f };
+    std::atomic<float> mutationChaosPreview { 0.0f };
+    std::atomic<float> mutationGlitchPreview { 0.0f };
+    std::atomic<float> mutationMorphPreview { 0.0f };
 
     // ===== UI Controls =====
     juce::Slider waveKnob, gainKnob, attackKnob, decayKnob, sustainKnob, widthKnob;
@@ -103,6 +124,7 @@ private:
     juce::Slider lfoKnob, lfoDepthKnob, filterModKnob;
     juce::Slider driveKnob, crushKnob, subMixKnob, envFilterKnob;
     juce::Slider chaosKnob, delayKnob, autoPanKnob, glitchKnob;
+    juce::Slider mutationRateKnob, mutationDepthKnob, bioSenseKnob;
 
     juce::Label waveLabel, waveValue;
     juce::Label gainLabel, gainValue;
@@ -125,6 +147,10 @@ private:
     juce::Label delayLabel, delayValue;
     juce::Label autoPanLabel, autoPanValue;
     juce::Label glitchLabel, glitchValue;
+    juce::Label mutationRateLabel, mutationRateValue;
+    juce::Label mutationDepthLabel, mutationDepthValue;
+    juce::Label bioSenseLabel, bioSenseValue;
+    juce::Label mutationStatusLabel;
 
     juce::TextButton audioToggle{ "Audio ON" };
     bool audioEnabled = true;
@@ -163,6 +189,7 @@ private:
     int findZeroCrossingIndex(int searchSpan) const;
     void captureWaveformSnapshot();
     void timerCallback() override;
+    void triggerMutationTarget(bool neutralise, bool immediate = false);
 
     inline float sine(float ph) const { return std::sin(ph); }
     inline float tri(float ph)  const { return (2.0f / juce::MathConstants<float>::pi) * std::asin(std::sin(ph)); }
