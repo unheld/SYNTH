@@ -8,6 +8,22 @@
       <FILE id="reBLKK" name="MainComponent.h" compile="0" resource="0" file="Source/MainComponent.h"/>
       <FILE id="QUIjtw" name="MainComponent.cpp" compile="1" resource="0"
             file="Source/MainComponent.cpp"/>
+      <GROUP id="{B6D28479-1C54-ABEA-09F2-EB4A3F57D23F}" name="synth">
+        <FILE id="{F0D859E6-014E-91BA-6CB3-79A71B39E79F}" name="SynthConfig.h" compile="0" resource="0"
+              file="Source/synth/SynthConfig.h"/>
+        <FILE id="{B6E8DAA1-58F2-3080-6245-FEC1E50AC112}" name="SynthEngine.h" compile="0" resource="0"
+              file="Source/synth/SynthEngine.h"/>
+        <FILE id="{50CF6203-382B-DC2C-9544-91394C9D0192}" name="SynthEngine.cpp" compile="1" resource="0"
+              file="Source/synth/SynthEngine.cpp"/>
+        <FILE id="{38EBA3C7-0B7D-8B04-3C9E-561F9020AB5C}" name="SynthUI.h" compile="0" resource="0"
+              file="Source/synth/SynthUI.h"/>
+        <FILE id="{7E19E247-8CFA-B4DA-712E-BC8CD4B79C49}" name="SynthUI.cpp" compile="1" resource="0"
+              file="Source/synth/SynthUI.cpp"/>
+        <FILE id="{FDC70BDA-9A7E-051C-2A48-1AD3C4F295E2}" name="SynthVisualizer.h" compile="0" resource="0"
+              file="Source/synth/SynthVisualizer.h"/>
+        <FILE id="{6B7B53B6-0B63-5EB2-2E46-2F9A4F9DA1F8}" name="SynthVisualizer.cpp" compile="1" resource="0"
+              file="Source/synth/SynthVisualizer.cpp"/>
+      </GROUP>
     </GROUP>
   </MAINGROUP>
   <MODULES>
