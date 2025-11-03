@@ -177,36 +177,102 @@ inline float MainComponent::polyBlep(float t, float dt) const
 
 inline float MainComponent::renderMorphSample(float ph, float morph, float normPhaseInc) const
 {
+    // ===== Fractal Oscillator Core (drop‑in) =====
+    // Keeps original 4‑shape morph, then layers a small number of
+    // band‑limited sine partials whose behaviour is driven by:
+    //   chaosAmount  -> number of partials / irregularity
+    //   subMixAmount -> even/odd bias (tone colour)
+    //   lfoDepth     -> gentle weight motion via lfoPhase
+    //
+    // No header/UI changes. Safe for JUCE 8 / C++17.
+
+    // --- Phase wrap ---
     while (ph >= juce::MathConstants<float>::twoPi) ph -= juce::MathConstants<float>::twoPi;
     if (ph < 0.0f) ph += juce::MathConstants<float>::twoPi;
 
     const float m = juce::jlimit(0.0f, 1.0f, morph);
     const float seg = 1.0f / 3.0f;
 
+    // --- Base waves (existing) ---
     const float sineSample = sine(ph);
-    const float triSample = tri(ph);
+    const float triSample  = tri(ph);
 
-    const float dt = juce::jlimit(1.0e-5f, 0.5f, normPhaseInc);
+    // Normalised phase increment per sample in cycles (0..0.5 usually)
+    const float dt = juce::jlimit(1.0e-6f, 0.5f, normPhaseInc);
+
+    // Fractional phase [0,1)
     float t = ph / juce::MathConstants<float>::twoPi;
     t -= std::floor(t);
 
+    // BLEP anti-aliased saw
     float sawSample = 2.0f * t - 1.0f;
     sawSample -= polyBlep(t, dt);
     sawSample = juce::jlimit(-1.2f, 1.2f, sawSample);
 
+    // BLEP anti-aliased square (50% duty)
     float squareSample = t < 0.5f ? 1.0f : -1.0f;
     squareSample += polyBlep(t, dt);
-    float t2 = t + 0.5f;
-    t2 -= std::floor(t2);
+    float t2 = t + 0.5f; t2 -= std::floor(t2);
     squareSample -= polyBlep(t2, dt);
     squareSample = std::tanh(squareSample * 1.15f);
 
-    if (m < seg)
-        return juce::jmap(m / seg, sineSample, triSample);
-    else if (m < 2.0f * seg)
-        return juce::jmap((m - seg) / seg, triSample, sawSample);
-    else
-        return juce::jmap((m - 2.0f * seg) / seg, sawSample, squareSample);
+    // Smooth morph across four shapes
+    float base;
+    if (m < seg)            base = juce::jmap(m / seg,                 sineSample,  triSample);
+    else if (m < 2.0f*seg)  base = juce::jmap((m - seg) / seg,         triSample,   sawSample);
+    else                    base = juce::jmap((m - 2.0f*seg) / seg,    sawSample,   squareSample);
+
+    // --- Fractal layering (new) ---
+    const float chaos   = juce::jlimit(0.0f, 1.0f, chaosAmount);
+    const float spread  = juce::jlimit(0.0f, 1.0f, subMixAmount);   // colour bias
+    const float motion  = juce::jlimit(0.0f, 1.0f, lfoDepth);       // gentle movement
+
+    // Max usable harmonic by Nyquist: k * dt < 0.5 => k < 0.5/dt
+    int maxNyquistH = (int)std::floor(0.5f / dt);
+    maxNyquistH = juce::jlimit(1, 64, maxNyquistH); // safety cap
+
+    // Choose small number of partials based on chaos (1..6) but never exceed Nyquist
+    const int desired = 1 + (int)std::round(chaos * 5.0f);
+    const int partials = juce::jlimit(1, juce::jmin(6, maxNyquistH), desired);
+
+    // Amplitude rolloff (steeper at low chaos)
+    const float rolloff = juce::jmap(chaos, 0.0f, 1.0f, 0.75f, 0.45f);
+
+    // Even/odd emphasis via spread
+    const float evenBias = juce::jlimit(0.0f, 1.0f, spread * 0.85f);
+    const float oddBias  = juce::jlimit(0.0f, 1.0f, 1.0f - spread * 0.65f);
+
+    // Subtle time motion ties timbre to LFO state (read‑only usage)
+    const float timeMod = std::sin(lfoPhase) * motion * 0.25f;
+
+    float layered = base;
+    float norm = 1.0f;
+
+    // Sum a few sine partials (band-limited) with biased weights.
+    // Using sines keeps alias low; additional BLEP not needed on harmonics.
+    for (int k = 2; k <= partials + 1; ++k)
+    {
+        if (k > maxNyquistH) break;
+
+        const bool isEven = (k % 2 == 0);
+        const float bias = isEven ? evenBias : oddBias;
+
+        // Weight decays with power; add tiny motion and chaos wobble
+        const float wobble = 1.0f + 0.12f * chaos * std::sin((float)k * (lfoPhase + 0.37f)) + timeMod;
+        const float w = std::pow(rolloff, (float)(k - 1)) * juce::jlimit(0.0f, 1.0f, 0.6f + 0.4f * bias) * wobble;
+
+        layered += w * std::sin((float)k * ph);
+        norm += w;
+    }
+
+    // Normalise and blend with original; layerMix scales with chaos
+    layered = juce::jlimit(-1.5f, 1.5f, layered / juce::jmax(1.0f, norm));
+    const float layerMix = juce::jlimit(0.0f, 1.0f, juce::jmap(chaos, 0.0f, 1.0f, 0.0f, 0.85f));
+
+    float out = juce::jmap(layerMix, base, layered);
+
+    // Final tiny soft clip to keep headroom consistent
+    return std::tanh(out * 1.1f);
 }
 
 void MainComponent::getNextAudioBlock(const juce::AudioSourceChannelInfo& bufferToFill)
