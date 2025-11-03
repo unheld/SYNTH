@@ -912,7 +912,6 @@ void MainComponent::initialiseTransport()
     {
         button.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(30, 30, 32));
         button.setColour(juce::TextButton::buttonOnColourId, juce::Colour::fromRGB(255, 120, 60));
-        button.setColour(juce::TextButton::buttonDownColourId, juce::Colour::fromRGB(255, 140, 70));
         button.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
         button.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
         button.setClickingTogglesState(false);
@@ -1336,105 +1335,148 @@ void MainComponent::restartSequencer()
 
 void MainComponent::importMidiSequence()
 {
-    juce::FileChooser chooser("Import MIDI", {}, "*.mid;*.midi");
-    if (!chooser.browseForFileToOpen())
-        return;
+    importFileChooser = std::make_unique<juce::FileChooser>("Import MIDI", juce::File(), "*.mid;*.midi");
 
-    juce::File file = chooser.getResult();
-    juce::FileInputStream stream(file);
-    if (!stream.openedOk())
-        return;
+    auto safeThis = juce::SafePointer<MainComponent>(this);
 
-    juce::MidiFile midiFile;
-    if (!midiFile.readFrom(stream))
-        return;
+    importFileChooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+        [safeThis](const juce::FileChooser& chooser) mutable
+        {
+            if (auto* self = safeThis.getComponent())
+            {
+                auto file = chooser.getResult();
+                self->importFileChooser.reset();
 
-    if (midiFile.getNumTracks() == 0)
-        return;
+                if (!file.existsAsFile())
+                    return;
 
-    const int ppq = midiFile.getTimeFormat() > 0 ? midiFile.getTimeFormat() : 960;
-    auto* track = midiFile.getTrack(0);
-    if (track == nullptr)
-        return;
+                juce::FileInputStream stream(file);
+                if (!stream.openedOk())
+                    return;
 
-    track->updateMatchedPairs();
+                juce::MidiFile midiFile;
+                if (!midiFile.readFrom(stream))
+                    return;
 
-    std::vector<MidiRollComponent::Note> imported;
-    imported.reserve((size_t)track->getNumEvents());
+                if (midiFile.getNumTracks() == 0)
+                    return;
 
-    const int totalSteps = midiRoll.getTotalSteps();
-    const int lowestNote = midiRoll.getLowestNote();
-    const int highestNote = midiRoll.getHighestNote();
+                const int ppq = midiFile.getTimeFormat() > 0 ? midiFile.getTimeFormat() : 960;
+                const auto* track = midiFile.getTrack(0);
+                if (track == nullptr)
+                    return;
 
-    for (int i = 0; i < track->getNumEvents(); ++i)
-    {
-        auto* holder = track->getEventPointer(i);
-        const auto& msg = holder->message;
-        if (!msg.isNoteOn())
-            continue;
+                juce::MidiMessageSequence trackCopy(*track);
+                trackCopy.updateMatchedPairs();
 
-        auto* off = holder->noteOffObject;
-        if (off == nullptr)
-            continue;
+                std::vector<MidiRollComponent::Note> imported;
+                imported.reserve((size_t)trackCopy.getNumEvents());
 
-        const double startTick = msg.getTimeStamp();
-        const double endTick = off->message.getTimeStamp();
-        if (endTick <= startTick)
-            continue;
+                const int totalSteps = self->midiRoll.getTotalSteps();
+                const int lowestNote = self->midiRoll.getLowestNote();
+                const int highestNote = self->midiRoll.getHighestNote();
 
-        const double startBeats = startTick / (double)ppq;
-        const double lengthBeats = (endTick - startTick) / (double)ppq;
+                for (int i = 0; i < trackCopy.getNumEvents(); ++i)
+                {
+                    auto* holder = trackCopy.getEventPointer(i);
+                    const auto& msg = holder->message;
+                    if (!msg.isNoteOn())
+                        continue;
 
-        int startStep = (int)std::round(startBeats * 4.0);
-        int lengthSteps = (int)std::round(lengthBeats * 4.0);
-        if (lengthSteps <= 0)
-            lengthSteps = 1;
+                    auto* off = holder->noteOffObject;
+                    if (off == nullptr)
+                        continue;
 
-        startStep = juce::jlimit(0, totalSteps - 1, startStep);
-        if (startStep >= totalSteps)
-            continue;
+                    const double startTick = msg.getTimeStamp();
+                    const double endTick = off->message.getTimeStamp();
+                    if (endTick <= startTick)
+                        continue;
 
-        if (startStep + lengthSteps > totalSteps)
-            lengthSteps = totalSteps - startStep;
+                    const double startBeats = startTick / (double)ppq;
+                    const double lengthBeats = (endTick - startTick) / (double)ppq;
 
-        MidiRollComponent::Note note;
-        note.midiNote = juce::jlimit(lowestNote, highestNote, msg.getNoteNumber());
-        note.startStep = startStep;
-        note.lengthSteps = juce::jmax(1, lengthSteps);
-        note.velocity = msg.getFloatVelocity();
-        imported.push_back(note);
-    }
+                    int startStep = (int)std::round(startBeats * 4.0);
+                    int lengthSteps = (int)std::round(lengthBeats * 4.0);
+                    if (lengthSteps <= 0)
+                        lengthSteps = 1;
 
-    midiRoll.setNotes(imported);
-    restartSequencer();
+                    startStep = juce::jlimit(0, totalSteps - 1, startStep);
+                    if (startStep >= totalSteps)
+                        continue;
+
+                    if (startStep + lengthSteps > totalSteps)
+                        lengthSteps = totalSteps - startStep;
+
+                    MidiRollComponent::Note note;
+                    note.midiNote = juce::jlimit(lowestNote, highestNote, msg.getNoteNumber());
+                    note.startStep = startStep;
+                    note.lengthSteps = juce::jmax(1, lengthSteps);
+                    note.velocity = msg.getFloatVelocity();
+                    imported.push_back(note);
+                }
+
+                self->midiRoll.setNotes(imported);
+                self->restartSequencer();
+            }
+        });
 }
 
 void MainComponent::exportMidiSequence()
 {
-    juce::FileChooser chooser("Export MIDI", {}, "*.mid");
-    if (!chooser.browseForFileToSave(true))
-        return;
+    exportFileChooser = std::make_unique<juce::FileChooser>("Export MIDI", juce::File(), "*.mid");
 
-    juce::File file = chooser.getResult();
-    if (!file.hasFileExtension("mid") && !file.hasFileExtension("midi"))
-        file = file.withFileExtension("mid");
+    auto flags = juce::FileBrowserComponent::saveMode
+               | juce::FileBrowserComponent::canSelectFiles
+               | juce::FileBrowserComponent::warnAboutOverwriting;
 
-    juce::FileOutputStream stream(file);
-    if (!stream.openedOk())
-        return;
+    auto safeThis = juce::SafePointer<MainComponent>(this);
 
-    juce::MidiFile midiFile;
-    midiFile.setTicksPerQuarterNote(960);
+    exportFileChooser->launchAsync(flags,
+        [safeThis](const juce::FileChooser& chooser) mutable
+        {
+            if (auto* self = safeThis.getComponent())
+            {
+                auto file = chooser.getResult();
+                self->exportFileChooser.reset();
 
-    juce::MidiMessageSequence tempoTrack;
-    tempoTrack.addEvent(juce::MidiMessage::tempoMetaEvent(juce::MidiMessage::bpmToMidiTempo(sequencerBpmValue.load())), 0.0);
-    midiFile.addTrack(tempoTrack);
+                if (file == juce::File())
+                    return;
 
-    auto sequence = midiRoll.createMidiSequence(1, sequencerBpmValue.load());
-    midiFile.addTrack(sequence);
+                if (!file.hasFileExtension("mid") && !file.hasFileExtension("midi"))
+                    file = file.withFileExtension("mid");
 
-    midiFile.convertTimestampSecondsToTicks();
-    midiFile.writeTo(stream);
+                juce::FileOutputStream stream(file);
+                if (!stream.openedOk())
+                    return;
+
+                juce::MidiFile midiFile;
+                constexpr int ticksPerQuarterNote = 960;
+                midiFile.setTicksPerQuarterNote(ticksPerQuarterNote);
+
+                const double bpm = juce::jmax(0.01, self->sequencerBpmValue.load());
+                const double secondsPerQuarterNote = 60.0 / bpm;
+                const double secondsPerTick = secondsPerQuarterNote / (double)ticksPerQuarterNote;
+
+                juce::MidiMessageSequence tempoTrack;
+                tempoTrack.addEvent(juce::MidiMessage::tempoMetaEvent(secondsPerQuarterNote), 0.0);
+                midiFile.addTrack(tempoTrack);
+
+                auto sequence = self->midiRoll.createMidiSequence(1, bpm);
+
+                for (int i = 0; i < sequence.getNumEvents(); ++i)
+                {
+                    if (auto* event = sequence.getEventPointer(i))
+                    {
+                        const double ticks = event->message.getTimeStamp() / secondsPerTick;
+                        event->message.setTimeStamp(ticks);
+                    }
+                }
+
+                sequence.updateMatchedPairs();
+                midiFile.addTrack(sequence);
+                midiFile.writeTo(stream);
+            }
+        });
 }
 
 void MainComponent::refreshSequencerNotes()
