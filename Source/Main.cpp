@@ -9,6 +9,12 @@
 #include <JuceHeader.h>
 #include "MainComponent.h"
 
+// The project is managed via Projucer, so new translation units are not
+// automatically compiled unless the .jucer file is regenerated. To keep this
+// change self-contained, we include the MIDI roll implementation here so that
+// it participates in the build without needing to touch the project file.
+#include "MidiRollComponent.cpp"
+
 //==============================================================================
 class SYNTHApplication  : public juce::JUCEApplication
 {
