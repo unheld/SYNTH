@@ -25,7 +25,7 @@ MainComponent::MainComponent()
     setAudioChannels(0, 2);
 
     scopeBuffer.clear();
-    waveHistory.clear();
+    waveformSnapshot.clear();
 
     ampEnvParams.attack = attackMs * 0.001f;
     ampEnvParams.decay = decayMs * 0.001f;
@@ -76,7 +76,7 @@ void MainComponent::prepareToPlay(int, double sampleRate)
     chaosSamplesRemaining = 0;
     glitchSamplesRemaining = 0;
     glitchHeldL = glitchHeldR = 0.0f;
-    waveHistory.clear();
+    waveformSnapshot.clear();
     resetSmoothers(sampleRate);
     updateFilterStatic();
     amplitudeEnvelope.setSampleRate(sampleRate);
@@ -393,107 +393,72 @@ void MainComponent::paint(juce::Graphics& g)
     {
         auto visualBounds = osc3DRect.toFloat();
         juce::ColourGradient background(
-            juce::Colour::fromRGB(6, 10, 24), visualBounds.getBottomLeft(),
-            juce::Colour::fromRGB(20, 34, 68), visualBounds.getTopRight(), false);
+            juce::Colour::fromRGB(8, 10, 22), visualBounds.getBottomLeft(),
+            juce::Colour::fromRGB(18, 32, 60), visualBounds.getTopRight(), false);
         g.setGradientFill(background);
         g.fillRoundedRectangle(visualBounds, 20.0f);
 
-        g.setColour(juce::Colours::white.withAlpha(0.12f));
-        g.drawRoundedRectangle(visualBounds, 20.0f, 1.5f);
+        g.setColour(juce::Colours::white.withAlpha(0.08f));
+        g.drawRoundedRectangle(visualBounds, 20.0f, 1.2f);
 
-        auto plotArea = osc3DRect.reduced(24, 20);
-        if (plotArea.getWidth() > 8 && plotArea.getHeight() > 8)
+        auto sphereBounds = visualBounds.reduced(28.0f, 24.0f);
+        const float diameter = juce::jmin(sphereBounds.getWidth(), sphereBounds.getHeight());
+
+        if (diameter > 8.0f)
         {
-            const float baseWidth = (float)plotArea.getWidth();
-            const float baseHeight = (float)plotArea.getHeight();
-            const float centreX = (float)plotArea.getCentreX();
-            const float baseBottom = (float)plotArea.getBottom();
+            juce::Rectangle<float> sphereArea(
+                sphereBounds.getCentreX() - diameter * 0.5f,
+                sphereBounds.getCentreY() - diameter * 0.5f,
+                diameter,
+                diameter);
 
-            auto projectPoint = [&](float xNorm, float yNorm, float depthNorm)
-            {
-                const float clampedDepth = juce::jlimit(0.0f, 1.0f, depthNorm);
-                const float scale = juce::jmap(1.0f - clampedDepth, 0.55f, 1.0f);
-                const float skew = clampedDepth * baseWidth * 0.18f;
-                const float px = centreX + (xNorm - 0.5f) * baseWidth * scale - skew;
-                const float py = baseBottom - clampedDepth * baseHeight * 0.75f - yNorm * baseHeight * scale;
-                return juce::Point<float>(px, py);
-            };
+            juce::ColourGradient sphereGradient(
+                juce::Colour::fromRGB(18, 38, 88), sphereArea.getCentre(),
+                juce::Colour::fromRGB(3, 6, 16), sphereArea.getBottomRight(), true);
+            sphereGradient.addColour(0.1, juce::Colour::fromRGB(24, 70, 140));
+            sphereGradient.addColour(0.6, juce::Colour::fromRGB(6, 18, 36));
 
-            juce::Path floor;
-            floor.startNewSubPath(projectPoint(0.0f, 1.0f, 0.0f));
-            floor.lineTo(projectPoint(1.0f, 1.0f, 0.0f));
-            floor.lineTo(projectPoint(1.0f, 1.0f, 1.0f));
-            floor.lineTo(projectPoint(0.0f, 1.0f, 1.0f));
-            floor.closeSubPath();
-            g.setColour(juce::Colours::white.withAlpha(0.03f));
-            g.fillPath(floor);
+            g.setGradientFill(sphereGradient);
+            g.fillEllipse(sphereArea);
 
+            g.setColour(juce::Colours::white.withAlpha(0.15f));
+            g.drawEllipse(sphereArea, 1.4f);
+
+            const auto centre = sphereArea.getCentre();
+            const float outerRadius = sphereArea.getWidth() * 0.5f;
+            const float innerRadius = outerRadius * 0.35f;
+            const float activeRadius = outerRadius * 0.92f;
+
+            // Draw a faint guide ring to suggest the equator of the sphere.
             g.setColour(juce::Colours::white.withAlpha(0.05f));
-            const int depthLines = 6;
-            for (int d = 0; d <= depthLines; ++d)
-            {
-                const float depth = (float)d / (float)depthLines;
-                auto p1 = projectPoint(0.0f, 0.0f, depth);
-                auto p2 = projectPoint(1.0f, 0.0f, depth);
-                g.drawLine({ p1, p2 }, 1.0f);
-            }
+            g.drawEllipse(sphereArea.reduced(outerRadius * 0.18f), 1.0f);
 
-            const int verticalLines = 8;
-            for (int v = 0; v <= verticalLines; ++v)
+            if (!waveformSnapshot.empty())
             {
-                const float x = (float)v / (float)verticalLines;
-                auto p1 = projectPoint(x, 0.0f, 0.0f);
-                auto p2 = projectPoint(x, 1.0f, 1.0f);
-                g.drawLine({ p1, p2 }, 1.0f);
-            }
+                juce::Path waveformPath;
+                const size_t count = waveformSnapshot.size();
 
-            if (!waveHistory.empty())
-            {
-                const size_t historyToDraw = juce::jmin<size_t>(waveHistory.size(), 90);
-                for (size_t layer = 0; layer < historyToDraw; ++layer)
+                for (size_t i = 0; i < count; ++i)
                 {
-                    const auto& samples = waveHistory[layer];
-                    if (samples.size() < 2)
-                        continue;
+                    const float angle = juce::MathConstants<float>::twoPi * (float)i / (float)count;
+                    const float sample = juce::jlimit(-1.0f, 1.0f, waveformSnapshot[i]);
+                    const float radius = juce::jmap(sample, -1.0f, 1.0f, innerRadius, activeRadius);
+                    const float x = centre.x + std::cos(angle) * radius;
+                    const float y = centre.y + std::sin(angle) * radius;
 
-                    const float depth = (float)layer / (float)historyToDraw;
-                    juce::Path wavePath;
-
-                    for (size_t i = 0; i < samples.size(); ++i)
-                    {
-                        const float xNorm = samples.size() > 1 ? (float)i / (float)(samples.size() - 1) : 0.0f;
-                        const float yNorm = juce::jmap(samples[i], -1.0f, 1.0f, 1.0f, 0.0f);
-                        auto projected = projectPoint(xNorm, yNorm, depth);
-                        if (i == 0)
-                            wavePath.startNewSubPath(projected);
-                        else
-                            wavePath.lineTo(projected);
-                    }
-
-                    const float intensity = juce::jmap(1.0f - depth, 0.18f, 0.9f);
-                    juce::Colour colour = juce::Colour::fromFloatRGBA(0.2f, 0.85f, 1.0f, intensity);
-                    g.setColour(colour);
-                    g.strokePath(wavePath, juce::PathStrokeType(1.6f));
+                    if (i == 0)
+                        waveformPath.startNewSubPath(x, y);
+                    else
+                        waveformPath.lineTo(x, y);
                 }
 
-                // Highlight the most recent layer for clarity.
-                const auto& latest = waveHistory.front();
-                if (latest.size() > 1)
-                {
-                    juce::Path latestPath;
-                    for (size_t i = 0; i < latest.size(); ++i)
-                    {
-                        const float xNorm = (float)i / (float)(latest.size() - 1);
-                        const float yNorm = juce::jmap(latest[i], -1.0f, 1.0f, 1.0f, 0.0f);
-                        auto projected = projectPoint(xNorm, yNorm, 0.0f);
-                        if (i == 0)
-                            latestPath.startNewSubPath(projected);
-                        else
-                            latestPath.lineTo(projected);
-                    }
-                    g.setColour(juce::Colour::fromFloatRGBA(0.7f, 1.0f, 1.0f, 0.95f));
-                    g.strokePath(latestPath, juce::PathStrokeType(2.4f));
-                }
+                waveformPath.closeSubPath();
+
+                g.setColour(juce::Colour::fromFloatRGBA(0.3f, 0.95f, 1.0f, 0.2f));
+                g.fillPath(waveformPath);
+
+                g.setColour(juce::Colour::fromFloatRGBA(0.4f, 0.95f, 1.0f, 0.85f));
+                g.strokePath(waveformPath, juce::PathStrokeType(1.8f));
             }
         }
     }
@@ -551,10 +516,7 @@ void MainComponent::captureWaveformSnapshot()
         snapshot.push_back(scopeBuffer.getSample(0, idx));
     }
 
-    waveHistory.push_front(std::move(snapshot));
-    const size_t maxHistory = 90;
-    if (waveHistory.size() > maxHistory)
-        waveHistory.pop_back();
+    waveformSnapshot = std::move(snapshot);
 }
 
 // ✅ FINAL DEFINITIVE FIX FOR ALL JUCE VERSIONS ✅
