@@ -2,9 +2,6 @@
 #include <JuceHeader.h>
 #include <vector>
 #include <atomic>
-#include <memory>
-
-#include "MidiRollComponent.h"
 
 class MainComponent : public juce::AudioAppComponent,
                       public juce::MidiInputCallback,
@@ -110,14 +107,6 @@ private:
     float glitchHeldR = 0.0f;
 
     // ===== UI Controls =====
-    juce::TextButton playButton{ "Play" };
-    juce::TextButton stopButton{ "Stop" };
-    juce::TextButton restartButton{ "Restart" };
-    juce::TextButton importButton{ "Import" };
-    juce::TextButton exportButton{ "Export" };
-    juce::Slider bpmSlider;
-    juce::Label bpmCaption;
-
     juce::Slider waveKnob, gainKnob, attackKnob, decayKnob, sustainKnob, widthKnob;
     juce::Slider pitchKnob, cutoffKnob, resonanceKnob, releaseKnob;
     juce::Slider lfoKnob, lfoDepthKnob, filterModKnob, lfoModeKnob, lfoStartKnob;
@@ -151,8 +140,6 @@ private:
     juce::TextButton audioToggle{ "Audio ON" };
     bool audioEnabled = true;
 
-    MidiRollComponent midiRoll;
-
     // ===== MIDI keyboard UI =====
     juce::MidiKeyboardState keyboardState;
     juce::MidiKeyboardComponent keyboardComponent { keyboardState, juce::MidiKeyboardComponent::horizontalKeyboard };
@@ -184,49 +171,10 @@ private:
     float lowBandState = 0.0f;
     float midBandState = 0.0f;
 
-    // Sequencer
-    struct SequencerNote
-    {
-        int midiNote = 60;
-        float velocity = 1.0f;
-        double startBeat = 0.0;
-        double endBeat = 0.0;
-    };
-
-    struct ActiveSequencerNote
-    {
-        int midiNote = 60;
-        double endBeat = 0.0;
-    };
-
-    void initialiseTransport();
+    // ===== Helpers =====
     void initialiseUi();
     void initialiseSliders();
     void initialiseToggle();
-    void setSequencerBpm(double newBpm);
-    void startSequencer();
-    void stopSequencer(bool sendAllNotesOff);
-    void restartSequencer();
-    void importMidiSequence();
-    void exportMidiSequence();
-    void refreshSequencerNotes();
-    void processSequencerBlock(int numSamples);
-    void handleSequencerClearRequests();
-
-    std::vector<SequencerNote> sequencerNotes;
-    std::vector<SequencerNote> sequencerNotesPending;
-    std::vector<ActiveSequencerNote> activeSequencerNotes;
-    juce::SpinLock sequencerNotesLock;
-    std::atomic<bool> sequencerNotesDirty { false };
-    std::atomic<bool> sequencerPlayState { false };
-    std::atomic<bool> sequencerClearActive { false };
-    std::atomic<bool> sequencerResetRequested { false };
-    std::atomic<double> sequencerBpmValue { 174.0 };
-    double sequencerPositionBeats = 0.0;
-    const double sequencerLoopBeats = 16.0;
-    std::atomic<double> playheadBeatsAtomic { 0.0 };
-
-    // ===== Helpers =====
     void initialiseMidiInputs();
     void initialiseKeyboard();
     void configureRotarySlider(juce::Slider& slider);
@@ -253,9 +201,6 @@ private:
         // A4 = 440 Hz, MIDI 69
         return 440.0f * std::pow(2.0f, (midiNote - 69) / 12.0f);
     }
-
-    std::unique_ptr<juce::FileChooser> importFileChooser;
-    std::unique_ptr<juce::FileChooser> exportFileChooser;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
 };

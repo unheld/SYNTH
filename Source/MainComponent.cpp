@@ -8,17 +8,13 @@ namespace
     constexpr int defaultHeight = 600;
     constexpr int minWidth = 720;
     constexpr int minHeight = 420;
-    constexpr int transportBarHeight = 48;
+    constexpr int headerBarHeight = 36;
     constexpr int headerMargin = 16;
     constexpr int audioButtonWidth = 96;
     constexpr int audioButtonHeight = 28;
-    constexpr int transportButtonWidth = 72;
-    constexpr int transportSpacing = 8;
-    constexpr int transportButtonHeight = 28;
     constexpr int controlStripHeight = 110;
     constexpr int knobSize = 48;
     constexpr int keyboardMinHeight = 60;
-    constexpr int midiRollMinHeight = 140;
     constexpr int scopeTimerHz = 60;
 }
 
@@ -48,16 +44,6 @@ MainComponent::MainComponent()
     initialiseUi();
     initialiseMidiInputs();
     initialiseKeyboard();
-
-    midiRoll.setLoopBeats(sequencerLoopBeats);
-    midiRoll.setRange(36, 84);
-    midiRoll.setPlayheadBeat(0.0);
-    midiRoll.onNotesChanged = [this]
-    {
-        refreshSequencerNotes();
-    };
-    refreshSequencerNotes();
-    playheadBeatsAtomic.store(0.0);
 
     startTimerHz(scopeTimerHz);
 }
@@ -295,8 +281,6 @@ void MainComponent::getNextAudioBlock(const juce::AudioSourceChannelInfo& buffer
         return;
 
     bufferToFill.buffer->clear(bufferToFill.startSample, bufferToFill.numSamples);
-
-    processSequencerBlock(bufferToFill.numSamples);
 
     auto* l = bufferToFill.buffer->getWritePointer(0, bufferToFill.startSample);
     auto* r = bufferToFill.buffer->getNumChannels() > 1
@@ -757,7 +741,6 @@ void MainComponent::paint(juce::Graphics& g)
 void MainComponent::timerCallback()
 {
     captureWaveformSnapshot();
-    midiRoll.setPlayheadBeat(playheadBeatsAtomic.load());
     repaint();
 }
 
@@ -792,34 +775,8 @@ void MainComponent::resized()
 
     auto area = getLocalBounds().reduced(headerMargin);
 
-    auto transport = area.removeFromTop(transportBarHeight);
-    auto toggleArea = transport.removeFromRight(audioButtonWidth);
-    toggleArea = toggleArea.withSizeKeepingCentre(audioButtonWidth, audioButtonHeight);
-    audioToggle.setBounds(toggleArea);
-
-    const int buttonHeight = juce::jmin(transportButtonHeight, transport.getHeight() - 8);
-    const int buttonY = transport.getY() + (transport.getHeight() - buttonHeight) / 2;
-    int x = transport.getX();
-
-    auto positionButton = [&](juce::Button& button)
-    {
-        button.setBounds(x, buttonY, transportButtonWidth, buttonHeight);
-        x += transportButtonWidth + transportSpacing;
-    };
-
-    positionButton(playButton);
-    positionButton(stopButton);
-    positionButton(restartButton);
-    positionButton(importButton);
-    positionButton(exportButton);
-
-    x += transportSpacing;
-    const int captionWidth = 36;
-    bpmCaption.setBounds(x, transport.getY(), captionWidth, transport.getHeight());
-    x += captionWidth + transportSpacing;
-
-    const int sliderWidth = juce::jmax(60, transport.getRight() - x);
-    bpmSlider.setBounds(x, buttonY, sliderWidth, buttonHeight);
+    auto bar = area.removeFromTop(headerBarHeight);
+    audioToggle.setBounds(bar.getRight() - audioButtonWidth, bar.getY() + 4, audioButtonWidth, audioButtonHeight);
 
     auto strip = area.removeFromTop(controlStripHeight);
     const int knob = knobSize;
@@ -861,10 +818,10 @@ void MainComponent::resized()
 
     for (int i = 0; i < numKnobs; ++i)
     {
-        const int colX = strip.getX() + i * colWidth + (colWidth - knob) / 2;
-        items[i].L->setBounds(colX, labelY, knob, labelH);
-        items[i].S->setBounds(colX, knobY, knob, knob);
-        items[i].V->setBounds(colX, valueY, knob, valueH);
+        const int x = strip.getX() + i * colWidth + (colWidth - knob) / 2;
+        items[i].L->setBounds(x, labelY, knob, labelH);
+        items[i].S->setBounds(x, knobY, knob, knob);
+        items[i].V->setBounds(x, valueY, knob, valueH);
     }
 
     int kbH = std::max(keyboardMinHeight, area.getHeight() / 5);
@@ -874,12 +831,7 @@ void MainComponent::resized()
     float keyW = juce::jlimit(16.0f, 40.0f, kbArea.getWidth() / 20.0f);
     keyboardComponent.setKeyWidth(keyW);
 
-    int midiRollHeight = std::max(midiRollMinHeight, area.getHeight() / 3);
-    midiRollHeight = std::min(midiRollHeight, area.getHeight());
-    auto midiRollArea = area.removeFromBottom(midiRollHeight);
-    midiRoll.setBounds(midiRollArea.reduced(0, 6));
-
-    int desiredScopeHeight = midiRollArea.getHeight();
+    int desiredScopeHeight = kbArea.getHeight();
     int availableHeight = area.getHeight();
     int scopeHeight = std::min(desiredScopeHeight, availableHeight);
     scopeHeight = std::max(scopeHeight, std::min(availableHeight, 80));
@@ -900,65 +852,8 @@ void MainComponent::resized()
 
 void MainComponent::initialiseUi()
 {
-    initialiseTransport();
     initialiseSliders();
     initialiseToggle();
-    addAndMakeVisible(midiRoll);
-}
-
-void MainComponent::initialiseTransport()
-{
-    auto configureButtonColours = [](juce::TextButton& button)
-    {
-        button.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(30, 30, 32));
-        button.setColour(juce::TextButton::buttonOnColourId, juce::Colour::fromRGB(255, 120, 60));
-        button.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
-        button.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
-        button.setClickingTogglesState(false);
-    };
-
-    configureButtonColours(playButton);
-    playButton.onClick = [this] { startSequencer(); };
-    addAndMakeVisible(playButton);
-
-    configureButtonColours(stopButton);
-    stopButton.onClick = [this] { stopSequencer(true); };
-    addAndMakeVisible(stopButton);
-
-    configureButtonColours(restartButton);
-    restartButton.onClick = [this] { restartSequencer(); };
-    addAndMakeVisible(restartButton);
-
-    configureButtonColours(importButton);
-    importButton.onClick = [this] { importMidiSequence(); };
-    addAndMakeVisible(importButton);
-
-    configureButtonColours(exportButton);
-    exportButton.onClick = [this] { exportMidiSequence(); };
-    addAndMakeVisible(exportButton);
-
-    bpmCaption.setText("BPM", juce::dontSendNotification);
-    bpmCaption.setJustificationType(juce::Justification::centredRight);
-    bpmCaption.setColour(juce::Label::textColourId, juce::Colours::white.withAlpha(0.85f));
-    addAndMakeVisible(bpmCaption);
-
-    bpmSlider.setRange(60.0, 220.0, 0.1);
-    bpmSlider.setSliderStyle(juce::Slider::LinearHorizontal);
-    bpmSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 64, 22);
-    bpmSlider.setNumDecimalPlacesToDisplay(1);
-    bpmSlider.setColour(juce::Slider::backgroundColourId, juce::Colour::fromRGB(24, 24, 28));
-    bpmSlider.setColour(juce::Slider::trackColourId, juce::Colour::fromRGB(255, 140, 66));
-    bpmSlider.setColour(juce::Slider::thumbColourId, juce::Colour::fromRGB(255, 140, 66));
-    bpmSlider.setColour(juce::Slider::textBoxBackgroundColourId, juce::Colour::fromRGB(20, 20, 24));
-    bpmSlider.setColour(juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
-    bpmSlider.setColour(juce::Slider::textBoxTextColourId, juce::Colours::white);
-    bpmSlider.onValueChange = [this]
-    {
-        setSequencerBpm(bpmSlider.getValue());
-    };
-    addAndMakeVisible(bpmSlider);
-
-    setSequencerBpm(sequencerBpmValue.load());
 }
 
 void MainComponent::initialiseSliders()
@@ -1303,325 +1198,6 @@ void MainComponent::initialiseToggle()
     };
     audioToggle.setButtonText("Audio ON");
     addAndMakeVisible(audioToggle);
-}
-
-void MainComponent::setSequencerBpm(double newBpm)
-{
-    const double clamped = juce::jlimit(40.0, 300.0, newBpm);
-    sequencerBpmValue.store(clamped);
-    bpmSlider.setValue(clamped, juce::dontSendNotification);
-}
-
-void MainComponent::startSequencer()
-{
-    sequencerClearActive.store(true);
-    sequencerPlayState.store(true);
-}
-
-void MainComponent::stopSequencer(bool sendAllNotesOff)
-{
-    sequencerPlayState.store(false);
-    if (sendAllNotesOff)
-        sequencerClearActive.store(true);
-}
-
-void MainComponent::restartSequencer()
-{
-    sequencerResetRequested.store(true);
-    sequencerClearActive.store(true);
-    playheadBeatsAtomic.store(0.0);
-    midiRoll.setPlayheadBeat(0.0);
-}
-
-void MainComponent::importMidiSequence()
-{
-    importFileChooser = std::make_unique<juce::FileChooser>("Import MIDI", juce::File(), "*.mid;*.midi");
-
-    auto safeThis = juce::SafePointer<MainComponent>(this);
-
-    importFileChooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
-        [safeThis](const juce::FileChooser& chooser) mutable
-        {
-            if (auto* self = safeThis.getComponent())
-            {
-                auto file = chooser.getResult();
-                self->importFileChooser.reset();
-
-                if (!file.existsAsFile())
-                    return;
-
-                juce::FileInputStream stream(file);
-                if (!stream.openedOk())
-                    return;
-
-                juce::MidiFile midiFile;
-                if (!midiFile.readFrom(stream))
-                    return;
-
-                if (midiFile.getNumTracks() == 0)
-                    return;
-
-                const int ppq = midiFile.getTimeFormat() > 0 ? midiFile.getTimeFormat() : 960;
-                const auto* track = midiFile.getTrack(0);
-                if (track == nullptr)
-                    return;
-
-                juce::MidiMessageSequence trackCopy(*track);
-                trackCopy.updateMatchedPairs();
-
-                std::vector<MidiRollComponent::Note> imported;
-                imported.reserve((size_t)trackCopy.getNumEvents());
-
-                const int totalSteps = self->midiRoll.getTotalSteps();
-                const int lowestNote = self->midiRoll.getLowestNote();
-                const int highestNote = self->midiRoll.getHighestNote();
-
-                for (int i = 0; i < trackCopy.getNumEvents(); ++i)
-                {
-                    auto* holder = trackCopy.getEventPointer(i);
-                    const auto& msg = holder->message;
-                    if (!msg.isNoteOn())
-                        continue;
-
-                    auto* off = holder->noteOffObject;
-                    if (off == nullptr)
-                        continue;
-
-                    const double startTick = msg.getTimeStamp();
-                    const double endTick = off->message.getTimeStamp();
-                    if (endTick <= startTick)
-                        continue;
-
-                    const double startBeats = startTick / (double)ppq;
-                    const double lengthBeats = (endTick - startTick) / (double)ppq;
-
-                    int startStep = (int)std::round(startBeats * 4.0);
-                    int lengthSteps = (int)std::round(lengthBeats * 4.0);
-                    if (lengthSteps <= 0)
-                        lengthSteps = 1;
-
-                    startStep = juce::jlimit(0, totalSteps - 1, startStep);
-                    if (startStep >= totalSteps)
-                        continue;
-
-                    if (startStep + lengthSteps > totalSteps)
-                        lengthSteps = totalSteps - startStep;
-
-                    MidiRollComponent::Note note;
-                    note.midiNote = juce::jlimit(lowestNote, highestNote, msg.getNoteNumber());
-                    note.startStep = startStep;
-                    note.lengthSteps = juce::jmax(1, lengthSteps);
-                    note.velocity = msg.getFloatVelocity();
-                    imported.push_back(note);
-                }
-
-                self->midiRoll.setNotes(imported);
-                self->restartSequencer();
-            }
-        });
-}
-
-void MainComponent::exportMidiSequence()
-{
-    exportFileChooser = std::make_unique<juce::FileChooser>("Export MIDI", juce::File(), "*.mid");
-
-    auto flags = juce::FileBrowserComponent::saveMode
-               | juce::FileBrowserComponent::canSelectFiles
-               | juce::FileBrowserComponent::warnAboutOverwriting;
-
-    auto safeThis = juce::SafePointer<MainComponent>(this);
-
-    exportFileChooser->launchAsync(flags,
-        [safeThis](const juce::FileChooser& chooser) mutable
-        {
-            if (auto* self = safeThis.getComponent())
-            {
-                auto file = chooser.getResult();
-                self->exportFileChooser.reset();
-
-                if (file == juce::File())
-                    return;
-
-                if (!file.hasFileExtension("mid") && !file.hasFileExtension("midi"))
-                    file = file.withFileExtension("mid");
-
-                juce::FileOutputStream stream(file);
-                if (!stream.openedOk())
-                    return;
-
-                juce::MidiFile midiFile;
-                constexpr int ticksPerQuarterNote = 960;
-                midiFile.setTicksPerQuarterNote(ticksPerQuarterNote);
-
-                const double bpm = juce::jmax(0.01, self->sequencerBpmValue.load());
-                const double secondsPerQuarterNote = 60.0 / bpm;
-                const double secondsPerTick = secondsPerQuarterNote / (double)ticksPerQuarterNote;
-
-                juce::MidiMessageSequence tempoTrack;
-                tempoTrack.addEvent(juce::MidiMessage::tempoMetaEvent(secondsPerQuarterNote), 0.0);
-                midiFile.addTrack(tempoTrack);
-
-                auto sequence = self->midiRoll.createMidiSequence(1, bpm);
-
-                for (int i = 0; i < sequence.getNumEvents(); ++i)
-                {
-                    if (auto* event = sequence.getEventPointer(i))
-                    {
-                        const double ticks = event->message.getTimeStamp() / secondsPerTick;
-                        event->message.setTimeStamp(ticks);
-                    }
-                }
-
-                sequence.updateMatchedPairs();
-                midiFile.addTrack(sequence);
-                midiFile.writeTo(stream);
-            }
-        });
-}
-
-void MainComponent::refreshSequencerNotes()
-{
-    const auto& rawNotes = midiRoll.getNotes();
-    std::vector<SequencerNote> converted;
-    converted.reserve(rawNotes.size());
-
-    for (const auto& note : rawNotes)
-    {
-        SequencerNote seq;
-        seq.midiNote = juce::jlimit(0, 127, note.midiNote);
-        seq.velocity = juce::jlimit(0.0f, 1.0f, note.velocity);
-        seq.startBeat = note.startStep * 0.25;
-        seq.endBeat = std::min(sequencerLoopBeats, seq.startBeat + note.lengthSteps * 0.25);
-
-        if (seq.startBeat >= sequencerLoopBeats)
-            continue;
-
-        if (seq.endBeat <= seq.startBeat + 1.0e-6)
-            continue;
-
-        converted.push_back(seq);
-    }
-
-    std::sort(converted.begin(), converted.end(), [](const SequencerNote& a, const SequencerNote& b)
-    {
-        if (std::abs(a.startBeat - b.startBeat) < 1.0e-6)
-            return a.midiNote < b.midiNote;
-        return a.startBeat < b.startBeat;
-    });
-
-    {
-        const juce::SpinLock::ScopedLockType lock(sequencerNotesLock);
-        sequencerNotesPending = std::move(converted);
-        sequencerNotesDirty.store(true);
-    }
-
-    sequencerClearActive.store(true);
-}
-
-void MainComponent::handleSequencerClearRequests()
-{
-    if (sequencerResetRequested.exchange(false))
-        sequencerPositionBeats = 0.0;
-
-    if (sequencerClearActive.exchange(false))
-    {
-        for (const auto& note : activeSequencerNotes)
-            handleNoteOff(nullptr, 1, note.midiNote, 0.0f);
-        activeSequencerNotes.clear();
-    }
-}
-
-void MainComponent::processSequencerBlock(int numSamples)
-{
-    if (sequencerNotesDirty.load())
-    {
-        juce::SpinLock::ScopedTryLockType lock(sequencerNotesLock);
-        if (lock.isLocked())
-        {
-            sequencerNotes = sequencerNotesPending;
-            sequencerNotesDirty.store(false);
-        }
-    }
-
-    handleSequencerClearRequests();
-
-    const double bpm = juce::jlimit(20.0, 300.0, sequencerBpmValue.load());
-    if (currentSR <= 0.0 || bpm <= 0.0)
-    {
-        playheadBeatsAtomic.store(sequencerPositionBeats);
-        return;
-    }
-
-    if (!sequencerPlayState.load())
-    {
-        playheadBeatsAtomic.store(sequencerPositionBeats);
-        return;
-    }
-
-    const double samplesPerBeat = currentSR * 60.0 / bpm;
-    if (samplesPerBeat <= 0.0)
-    {
-        playheadBeatsAtomic.store(sequencerPositionBeats);
-        return;
-    }
-
-    const double beatAdvance = (double)numSamples / samplesPerBeat;
-    double startBeat = sequencerPositionBeats;
-    double absoluteEnd = startBeat + beatAdvance;
-
-    const bool wraps = absoluteEnd >= sequencerLoopBeats;
-    double wrappedEnd = wraps ? std::fmod(absoluteEnd, sequencerLoopBeats) : absoluteEnd;
-    if (wrappedEnd < 0.0)
-        wrappedEnd += sequencerLoopBeats;
-
-    const double epsilon = 1.0e-6;
-
-    auto processRange = [&](double rangeStart, double rangeEnd)
-    {
-        if (rangeEnd <= rangeStart)
-            return;
-
-        const double startThreshold = rangeStart - epsilon;
-        const double endThreshold = rangeEnd - epsilon;
-
-        for (const auto& note : sequencerNotes)
-        {
-            if (note.startBeat >= startThreshold && note.startBeat < endThreshold)
-            {
-                handleNoteOn(nullptr, 1, note.midiNote, note.velocity);
-                activeSequencerNotes.push_back({ note.midiNote, note.endBeat });
-            }
-        }
-
-        for (auto it = activeSequencerNotes.begin(); it != activeSequencerNotes.end(); )
-        {
-            if (it->endBeat >= startThreshold && it->endBeat < rangeEnd + epsilon)
-            {
-                handleNoteOff(nullptr, 1, it->midiNote, 0.0f);
-                it = activeSequencerNotes.erase(it);
-            }
-            else
-            {
-                ++it;
-            }
-        }
-    };
-
-    if (wraps)
-    {
-        processRange(startBeat, sequencerLoopBeats);
-        processRange(0.0, wrappedEnd);
-    }
-    else
-    {
-        processRange(startBeat, absoluteEnd);
-    }
-
-    sequencerPositionBeats = wraps ? wrappedEnd : absoluteEnd;
-    if (sequencerPositionBeats >= sequencerLoopBeats)
-        sequencerPositionBeats = std::fmod(sequencerPositionBeats, sequencerLoopBeats);
-
-    playheadBeatsAtomic.store(sequencerPositionBeats);
 }
 
 void MainComponent::initialiseMidiInputs()
