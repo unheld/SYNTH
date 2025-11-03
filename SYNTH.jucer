@@ -13,21 +13,21 @@
               file="Source/synth/SynthConfig.h"/>
         <FILE id="{B6E8DAA1-58F2-3080-6245-FEC1E50AC112}" name="SynthEngine.h" compile="0" resource="0"
               file="Source/synth/SynthEngine.h"/>
-        <FILE id="{50CF6203-382B-DC2C-9544-91394C9D0192}" name="SynthEngine.cpp" compile="1" resource="0"
+        <FILE id="{50CF6203-382B-DC2C-9544-91394C9D0192}" name="SynthEngine.cpp" compile="0" resource="0"
               file="Source/SynthEngine.cpp"/>
-        <FILE id="{E536249E-6C95-4E77-97B5-3F2E6D9C1E74}" name="SynthEngine.cpp" compile="0" resource="0"
+        <FILE id="{E536249E-6C95-4E77-97B5-3F2E6D9C1E74}" name="SynthEngine.cpp" compile="1" resource="0"
               file="Source/synth/SynthEngine.cpp"/>
         <FILE id="{38EBA3C7-0B7D-8B04-3C9E-561F9020AB5C}" name="SynthUI.h" compile="0" resource="0"
               file="Source/synth/SynthUI.h"/>
-        <FILE id="{7E19E247-8CFA-B4DA-712E-BC8CD4B79C49}" name="SynthUI.cpp" compile="1" resource="0"
+        <FILE id="{7E19E247-8CFA-B4DA-712E-BC8CD4B79C49}" name="SynthUI.cpp" compile="0" resource="0"
               file="Source/SynthUI.cpp"/>
-        <FILE id="{2C3E6944-7A1C-4E69-B447-1B9A73E530F9}" name="SynthUI.cpp" compile="0" resource="0"
+        <FILE id="{2C3E6944-7A1C-4E69-B447-1B9A73E530F9}" name="SynthUI.cpp" compile="1" resource="0"
               file="Source/synth/SynthUI.cpp"/>
         <FILE id="{FDC70BDA-9A7E-051C-2A48-1AD3C4F295E2}" name="SynthVisualizer.h" compile="0" resource="0"
               file="Source/synth/SynthVisualizer.h"/>
-        <FILE id="{6B7B53B6-0B63-5EB2-2E46-2F9A4F9DA1F8}" name="SynthVisualizer.cpp" compile="1" resource="0"
+        <FILE id="{6B7B53B6-0B63-5EB2-2E46-2F9A4F9DA1F8}" name="SynthVisualizer.cpp" compile="0" resource="0"
               file="Source/SynthVisualizer.cpp"/>
-        <FILE id="{3F8243B3-9F5F-4DA6-97B7-81E4FD7D617C}" name="SynthVisualizer.cpp" compile="0" resource="0"
+        <FILE id="{3F8243B3-9F5F-4DA6-97B7-81E4FD7D617C}" name="SynthVisualizer.cpp" compile="1" resource="0"
               file="Source/synth/SynthVisualizer.cpp"/>
       </GROUP>
     </GROUP>
