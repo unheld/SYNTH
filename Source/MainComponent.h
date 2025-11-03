@@ -32,6 +32,15 @@ private:
     float   lfoPhase = 0.0f;
     float   lfoRateHz = 5.0f;
     float   lfoDepth = 0.03f;
+    float   lfoStartPhaseNormalized = 0.0f;
+
+    enum class LfoTriggerMode
+    {
+        Retrigger = 0,
+        FreeRun
+    };
+
+    LfoTriggerMode lfoTriggerMode = LfoTriggerMode::Retrigger;
 
     // Smoothed parameters for a more polished response
     juce::SmoothedValue<float> frequencySmoothed;
@@ -99,7 +108,7 @@ private:
     // ===== UI Controls =====
     juce::Slider waveKnob, gainKnob, attackKnob, decayKnob, sustainKnob, widthKnob;
     juce::Slider pitchKnob, cutoffKnob, resonanceKnob, releaseKnob;
-    juce::Slider lfoKnob, lfoDepthKnob, filterModKnob;
+    juce::Slider lfoKnob, lfoDepthKnob, filterModKnob, lfoModeKnob, lfoStartKnob;
     juce::Slider driveKnob, crushKnob, subMixKnob, envFilterKnob;
     juce::Slider chaosKnob, delayKnob, autoPanKnob, glitchKnob;
 
@@ -116,6 +125,8 @@ private:
     juce::Label lfoLabel, lfoValue;
     juce::Label lfoDepthLabel, lfoDepthValue;
     juce::Label filterModLabel, filterModValue;
+    juce::Label lfoModeLabel, lfoModeValue;
+    juce::Label lfoStartLabel, lfoStartValue;
     juce::Label driveLabel, driveValue;
     juce::Label crushLabel, crushValue;
     juce::Label subMixLabel, subMixValue;
@@ -153,6 +164,7 @@ private:
     void configureCaptionLabel(juce::Label& label, const juce::String& text);
     void configureValueLabel(juce::Label& label);
     void updateAmplitudeEnvelope();
+    void triggerLfo();
 
     void resetSmoothers(double sampleRate);
     void setTargetFrequency(float newFrequency, bool force = false);
