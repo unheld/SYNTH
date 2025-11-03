@@ -118,6 +118,7 @@ private:
     juce::SmoothedValue<float> lfoDepthSmoothed;
     juce::SmoothedValue<float> driveSmoothed;
 
+    float waveMorph = 0.0f;
     float outputGain = 0.5f;
     float driveAmount = 0.0f;
     float crushAmount = 0.0f;
