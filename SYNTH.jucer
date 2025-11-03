@@ -5,7 +5,11 @@
   <MAINGROUP id="JCOyFX" name="SYNTH">
     <GROUP id="{E8253D56-711B-B221-B3B7-037EF05DEC3A}" name="Source">
       <FILE id="XtmB47" name="Main.cpp" compile="1" resource="0" file="Source/Main.cpp"/>
+      <FILE id="coOmAJ" name="MidiRollComponent.h" compile="0" resource="0"
+            file="Source/MidiRollComponent.h"/>
       <FILE id="reBLKK" name="MainComponent.h" compile="0" resource="0" file="Source/MainComponent.h"/>
+      <FILE id="XiBPtf" name="MidiRollComponent.cpp" compile="1" resource="0"
+            file="Source/MidiRollComponent.cpp"/>
       <FILE id="QUIjtw" name="MainComponent.cpp" compile="1" resource="0"
             file="Source/MainComponent.cpp"/>
     </GROUP>

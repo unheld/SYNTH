@@ -44,6 +44,9 @@ MainComponent::MainComponent()
     initialiseUi();
     initialiseMidiInputs();
     initialiseKeyboard();
+    
+midiRoll = std::make_unique<MidiRollComponent>();
+addAndMakeVisible(midiRoll.get());
 
     startTimerHz(scopeTimerHz);
 }
@@ -824,8 +827,18 @@ void MainComponent::resized()
         items[i].V->setBounds(x, valueY, knob, valueH);
     }
 
+    if (midiRoll)
+{
+    auto rollHeight = 200;
+    auto rollArea = area.removeFromBottom(rollHeight);
+    midiRoll->setBounds(rollArea);
+}
+
+    
     int kbH = std::max(keyboardMinHeight, area.getHeight() / 5);
     auto kbArea = area.removeFromBottom(kbH);
+    
+    
     keyboardComponent.setBounds(kbArea);
 
     float keyW = juce::jlimit(16.0f, 40.0f, kbArea.getWidth() / 20.0f);
@@ -848,7 +861,13 @@ void MainComponent::resized()
 
     scopeRect = scopeArea.isEmpty() ? juce::Rectangle<int>() : scopeArea.reduced(8, 6);
     osc3DRect = area.reduced(12, 12);
+    
+    if (midiRoll)
+    midiRoll->setBounds(getLocalBounds().removeFromBottom(200));
 }
+
+
+
 
 void MainComponent::initialiseUi()
 {

@@ -2,6 +2,8 @@
 #include <JuceHeader.h>
 #include <vector>
 #include <atomic>
+#include "MidiRollComponent.h"
+
 
 class MainComponent : public juce::AudioAppComponent,
                       public juce::MidiInputCallback,
@@ -201,6 +203,8 @@ private:
         // A4 = 440 Hz, MIDI 69
         return 440.0f * std::pow(2.0f, (midiNote - 69) / 12.0f);
     }
+
+    std::unique_ptr<MidiRollComponent> midiRoll;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
 };
