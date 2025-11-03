@@ -3,8 +3,6 @@
 #include <vector>
 #include <atomic>
 
-#include "MidiRollComponent.h"
-
 class MainComponent : public juce::AudioAppComponent,
                       public juce::MidiInputCallback,
                       public juce::MidiKeyboardStateListener,
@@ -25,9 +23,6 @@ public:
     void handleIncomingMidiMessage(juce::MidiInput* source, const juce::MidiMessage& message) override;
     void handleNoteOn(juce::MidiKeyboardState*, int midiChannel, int midiNoteNumber, float velocity) override;
     void handleNoteOff(juce::MidiKeyboardState*, int midiChannel, int midiNoteNumber, float /*velocity*/) override;
-
-    void triggerRollNoteOn(int midiNoteNumber, float velocity);
-    void triggerRollNoteOff(int midiNoteNumber);
 
 private:
     // ===== Synth state =====
@@ -148,7 +143,6 @@ private:
     // ===== MIDI keyboard UI =====
     juce::MidiKeyboardState keyboardState;
     juce::MidiKeyboardComponent keyboardComponent { keyboardState, juce::MidiKeyboardComponent::horizontalKeyboard };
-    MidiRollComponent midiRoll;
 
     // ===== MIDI state (monophonic, last-note priority) =====
     juce::Array<int> noteStack;   // holds pressed MIDI notes

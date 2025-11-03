@@ -45,16 +45,6 @@ MainComponent::MainComponent()
     initialiseMidiInputs();
     initialiseKeyboard();
 
-    addAndMakeVisible(midiRoll);
-    midiRoll.setNoteOnCallback([this](int noteNumber, float velocity)
-    {
-        triggerRollNoteOn(noteNumber, velocity);
-    });
-    midiRoll.setNoteOffCallback([this](int noteNumber)
-    {
-        triggerRollNoteOff(noteNumber);
-    });
-
     startTimerHz(scopeTimerHz);
 }
 
@@ -834,22 +824,6 @@ void MainComponent::resized()
         items[i].V->setBounds(x, valueY, knob, valueH);
     }
 
-    const int minRollHeight = 180;
-    const int minScopeHeight = 80;
-
-    int rollLimit = std::max(0, area.getHeight() - keyboardMinHeight - minScopeHeight);
-    int rollHeight = area.getHeight() / 2;
-    if (rollLimit <= 0)
-        rollHeight = 0;
-    else
-    {
-        rollHeight = juce::jlimit(minRollHeight, std::max(minRollHeight, rollLimit), rollHeight);
-        rollHeight = std::min(rollHeight, rollLimit);
-    }
-
-    auto rollArea = area.removeFromTop(rollHeight);
-    midiRoll.setBounds(rollArea);
-
     int kbH = std::max(keyboardMinHeight, area.getHeight() / 5);
     auto kbArea = area.removeFromBottom(kbH);
     keyboardComponent.setBounds(kbArea);
@@ -1335,16 +1309,6 @@ void MainComponent::handleIncomingMidiMessage(juce::MidiInput*, const juce::Midi
         currentMidiNote = -1;
         amplitudeEnvelope.noteOff();
     }
-}
-
-void MainComponent::triggerRollNoteOn(int midiNoteNumber, float velocity)
-{
-    keyboardState.noteOn(1, midiNoteNumber, velocity);
-}
-
-void MainComponent::triggerRollNoteOff(int midiNoteNumber)
-{
-    keyboardState.noteOff(1, midiNoteNumber, 0.0f);
 }
 
 void MainComponent::handleNoteOn(juce::MidiKeyboardState*, int, int midiNoteNumber, float velocity)
