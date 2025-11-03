@@ -170,15 +170,14 @@ private:
     void setTargetFrequency(float newFrequency, bool force = false);
     void updateFilterCoeffs(double cutoff, double Q);
     void updateFilterStatic();
-    inline float renderMorphSample(float ph, float morph) const;
+    inline float renderMorphSample(float ph, float morph, float normPhaseInc) const;
+    inline float polyBlep(float t, float dt) const;
     int findZeroCrossingIndex(int searchSpan) const;
     void captureWaveformSnapshot();
     void timerCallback() override;
 
     inline float sine(float ph) const { return std::sin(ph); }
     inline float tri(float ph)  const { return (2.0f / juce::MathConstants<float>::pi) * std::asin(std::sin(ph)); }
-    inline float saw(float ph)  const { return 2.0f * (ph / juce::MathConstants<float>::twoPi) - 1.0f; }
-    inline float sqr(float ph)  const { return std::tanh(3.0f * std::sin(ph)); }
 
     static inline float midiNoteToFreq(int midiNote)
     {
