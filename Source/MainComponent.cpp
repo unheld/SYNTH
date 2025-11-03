@@ -82,6 +82,7 @@ void MainComponent::prepareToPlay(int, double sampleRate)
     amplitudeEnvelope.setSampleRate(sampleRate);
     updateAmplitudeEnvelope();
     amplitudeEnvelope.reset();
+    triggerLfo();
 
     maxDelaySamples = juce::jmax(1, (int)std::ceil(sampleRate * 2.0));
     delayBuffer.setSize(2, maxDelaySamples);
@@ -533,7 +534,7 @@ void MainComponent::resized()
 
     auto strip = area.removeFromTop(controlStripHeight);
     const int knob = knobSize;
-    const int numKnobs = 21;
+    const int numKnobs = 23;
     const int colWidth = strip.getWidth() / numKnobs;
 
     struct Item { juce::Label* L; juce::Slider* S; juce::Label* V; };
@@ -551,6 +552,8 @@ void MainComponent::resized()
         { &lfoLabel, &lfoKnob, &lfoValue },
         { &lfoDepthLabel, &lfoDepthKnob, &lfoDepthValue },
         { &filterModLabel, &filterModKnob, &filterModValue },
+        { &lfoModeLabel, &lfoModeKnob, &lfoModeValue },
+        { &lfoStartLabel, &lfoStartKnob, &lfoStartValue },
         { &driveLabel, &driveKnob, &driveValue },
         { &crushLabel, &crushKnob, &crushValue },
         { &subMixLabel, &subMixKnob, &subMixValue },
@@ -796,6 +799,37 @@ void MainComponent::initialiseSliders()
     };
     filterModKnob.onValueChange();
 
+    configureRotarySlider(lfoModeKnob);
+    lfoModeKnob.setRange(0.0, 1.0, 1.0);
+    lfoModeKnob.setValue((lfoTriggerMode == LfoTriggerMode::FreeRun) ? 1.0 : 0.0);
+    addAndMakeVisible(lfoModeKnob);
+    configureCaptionLabel(lfoModeLabel, "LFO Mode");
+    configureValueLabel(lfoModeValue);
+    lfoModeKnob.onValueChange = [this]
+    {
+        const bool freeRun = juce::approximatelyEqual(lfoModeKnob.getValue(), 1.0);
+        lfoTriggerMode = freeRun ? LfoTriggerMode::FreeRun : LfoTriggerMode::Retrigger;
+        lfoModeValue.setText(freeRun ? "Loop" : "Retrig", juce::dontSendNotification);
+        if (!freeRun)
+            triggerLfo();
+    };
+    lfoModeKnob.onValueChange();
+
+    configureRotarySlider(lfoStartKnob);
+    lfoStartKnob.setRange(0.0, 1.0, 0.001);
+    lfoStartKnob.setValue(lfoStartPhaseNormalized);
+    addAndMakeVisible(lfoStartKnob);
+    configureCaptionLabel(lfoStartLabel, "LFO Start");
+    configureValueLabel(lfoStartValue);
+    lfoStartKnob.onValueChange = [this]
+    {
+        lfoStartPhaseNormalized = (float)lfoStartKnob.getValue();
+        const auto startDegrees = juce::roundToInt(lfoStartPhaseNormalized * 360.0f);
+        lfoStartValue.setText(juce::String::formatted("%d\xc2\xb0", startDegrees), juce::dontSendNotification);
+        triggerLfo();
+    };
+    lfoStartKnob.onValueChange();
+
     configureRotarySlider(driveKnob);
     driveKnob.setRange(0.0, 1.0);
     driveKnob.setValue(driveAmount);
@@ -976,6 +1010,19 @@ void MainComponent::updateAmplitudeEnvelope()
     amplitudeEnvelope.setParameters(ampEnvParams);
 }
 
+void MainComponent::triggerLfo()
+{
+    if (lfoTriggerMode == LfoTriggerMode::Retrigger)
+    {
+        const float wrapped = juce::jlimit(0.0f, 1.0f, lfoStartPhaseNormalized);
+        lfoPhase = juce::MathConstants<float>::twoPi * wrapped;
+        while (lfoPhase >= juce::MathConstants<float>::twoPi)
+            lfoPhase -= juce::MathConstants<float>::twoPi;
+        if (lfoPhase < 0.0f)
+            lfoPhase += juce::MathConstants<float>::twoPi;
+    }
+}
+
 //==============================================================================
 // MIDI Input handlers stay unchanged
 void MainComponent::handleIncomingMidiMessage(juce::MidiInput*, const juce::MidiMessage& m)
@@ -989,6 +1036,7 @@ void MainComponent::handleIncomingMidiMessage(juce::MidiInput*, const juce::Midi
         setTargetFrequency(midiNoteToFreq(currentMidiNote));
         midiGate = true;
         amplitudeEnvelope.noteOn();
+        triggerLfo();
     }
     else if (m.isNoteOff())
     {
@@ -1005,6 +1053,7 @@ void MainComponent::handleIncomingMidiMessage(juce::MidiInput*, const juce::Midi
             setTargetFrequency(midiNoteToFreq(currentMidiNote));
             midiGate = true;
             amplitudeEnvelope.noteOn();
+            triggerLfo();
         }
     }
     else if (m.isAllNotesOff() || m.isAllSoundOff())
@@ -1024,6 +1073,7 @@ void MainComponent::handleNoteOn(juce::MidiKeyboardState*, int, int midiNoteNumb
     setTargetFrequency(midiNoteToFreq(currentMidiNote));
     midiGate = true;
     amplitudeEnvelope.noteOn();
+    triggerLfo();
 }
 
 void MainComponent::handleNoteOff(juce::MidiKeyboardState*, int, int midiNoteNumber, float)
@@ -1041,5 +1091,6 @@ void MainComponent::handleNoteOff(juce::MidiKeyboardState*, int, int midiNoteNum
         setTargetFrequency(midiNoteToFreq(currentMidiNote));
         midiGate = true;
         amplitudeEnvelope.noteOn();
+        triggerLfo();
     }
 }
