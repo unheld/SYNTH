@@ -825,7 +825,7 @@ void MainComponent::initialiseSliders()
     {
         lfoStartPhaseNormalized = (float)lfoStartKnob.getValue();
         const int degrees = juce::roundToInt(lfoStartPhaseNormalized * 360.0);
-        lfoStartValue.setText(juce::String(degrees) + juce::CharPointer_UTF8("\xc2\xb0"), juce::dontSendNotification);
+        lfoStartValue.setText(juce::String(degrees) + juce::String::charToString(0x00B0), juce::dontSendNotification);
         triggerLfo();
     };
     lfoStartKnob.onValueChange();
