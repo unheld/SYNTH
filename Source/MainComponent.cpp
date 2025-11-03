@@ -155,7 +155,27 @@ void MainComponent::setTargetFrequency(float newFrequency, bool force)
         frequencySmoothed.setTargetValue(targetFrequency);
 }
 
-inline float MainComponent::renderMorphSample(float ph, float morph) const
+inline float MainComponent::polyBlep(float t, float dt) const
+{
+    if (dt <= 0.0f)
+        return 0.0f;
+
+    if (t < dt)
+    {
+        t /= dt;
+        return t + t - t * t - 1.0f;
+    }
+
+    if (t > 1.0f - dt)
+    {
+        t = (t - 1.0f) / dt;
+        return t * t + t + t + 1.0f;
+    }
+
+    return 0.0f;
+}
+
+inline float MainComponent::renderMorphSample(float ph, float morph, float normPhaseInc) const
 {
     while (ph >= juce::MathConstants<float>::twoPi) ph -= juce::MathConstants<float>::twoPi;
     if (ph < 0.0f) ph += juce::MathConstants<float>::twoPi;
@@ -163,12 +183,30 @@ inline float MainComponent::renderMorphSample(float ph, float morph) const
     const float m = juce::jlimit(0.0f, 1.0f, morph);
     const float seg = 1.0f / 3.0f;
 
+    const float sineSample = sine(ph);
+    const float triSample = tri(ph);
+
+    const float dt = juce::jlimit(1.0e-5f, 0.5f, normPhaseInc);
+    float t = ph / juce::MathConstants<float>::twoPi;
+    t -= std::floor(t);
+
+    float sawSample = 2.0f * t - 1.0f;
+    sawSample -= polyBlep(t, dt);
+    sawSample = juce::jlimit(-1.2f, 1.2f, sawSample);
+
+    float squareSample = t < 0.5f ? 1.0f : -1.0f;
+    squareSample += polyBlep(t, dt);
+    float t2 = t + 0.5f;
+    t2 -= std::floor(t2);
+    squareSample -= polyBlep(t2, dt);
+    squareSample = std::tanh(squareSample * 1.15f);
+
     if (m < seg)
-        return juce::jmap(m / seg, sine(ph), tri(ph));
+        return juce::jmap(m / seg, sineSample, triSample);
     else if (m < 2.0f * seg)
-        return juce::jmap((m - seg) / seg, tri(ph), saw(ph));
+        return juce::jmap((m - seg) / seg, triSample, sawSample);
     else
-        return std::tanh(juce::jmap((m - 2.0f * seg) / seg, saw(ph), sqr(ph)));
+        return juce::jmap((m - 2.0f * seg) / seg, sawSample, squareSample);
 }
 
 void MainComponent::getNextAudioBlock(const juce::AudioSourceChannelInfo& bufferToFill)
@@ -230,7 +268,7 @@ void MainComponent::getNextAudioBlock(const juce::AudioSourceChannelInfo& buffer
                 chaosSamplesRemaining = span;
                 chaosValue = random.nextFloat() * 2.0f - 1.0f;
             }
-            chaosScale = juce::jlimit(0.5f, 1.5f, 1.0f + chaosValue * chaosAmt * 0.12f);
+            chaosScale = juce::jlimit(0.7f, 1.3f, 1.0f + chaosValue * chaosAmt * 0.10f);
             --chaosSamplesRemaining;
         }
         else
@@ -242,6 +280,7 @@ void MainComponent::getNextAudioBlock(const juce::AudioSourceChannelInfo& buffer
         const float effectiveFrequency = baseFrequency * chaosScale;
         const float phaseInc = juce::MathConstants<float>::twoPi * (effectiveFrequency * vibrato) / (float)currentSR;
         phase += phaseInc;
+        if (phase >= juce::MathConstants<float>::twoPi) phase -= juce::MathConstants<float>::twoPi;
 
         float subPhaseInc = phaseInc * 0.5f;
         float detunePhaseInc = phaseInc * 1.01f;
@@ -250,15 +289,24 @@ void MainComponent::getNextAudioBlock(const juce::AudioSourceChannelInfo& buffer
         if (subPhase >= juce::MathConstants<float>::twoPi) subPhase -= juce::MathConstants<float>::twoPi;
         if (detunePhase >= juce::MathConstants<float>::twoPi) detunePhase -= juce::MathConstants<float>::twoPi;
 
-        float primary = renderMorphSample(phase, waveMorph);
-        float subSample = renderMorphSample(subPhase, waveMorph);
-        float detuneSample = renderMorphSample(detunePhase, waveMorph);
-        float combined = juce::jmap(subMixAmt, primary, 0.5f * (primary + subSample + detuneSample));
+        const float normInc = phaseInc / juce::MathConstants<float>::twoPi;
+        const float subNormInc = subPhaseInc / juce::MathConstants<float>::twoPi;
+        const float detuneNormInc = detunePhaseInc / juce::MathConstants<float>::twoPi;
+
+        float primary = renderMorphSample(phase, waveMorph, normInc);
+        float subSample = renderMorphSample(subPhase, waveMorph, subNormInc);
+        float detuneSample = renderMorphSample(detunePhase, waveMorph, detuneNormInc);
+        float stacked = juce::jlimit(-1.0f, 1.0f,
+            primary * 0.55f + subSample * 0.35f + detuneSample * 0.35f);
+        float combined = juce::jmap(subMixAmt, primary, stacked);
         float s = combined * gain;
 
         if (drive > 0.0f)
         {
-            float shaped = std::tanh(s * (1.0f + drive * 10.0f));
+            float preGain = 1.5f + drive * 9.0f;
+            float softClip = std::tanh(s * preGain);
+            float evenHarmonics = std::tanh((s * preGain) * 0.6f) * 0.8f;
+            float shaped = juce::jlimit(-1.0f, 1.0f, 0.65f * softClip + 0.35f * evenHarmonics);
             s = juce::jmap(drive, 0.0f, 1.0f, s, shaped);
         }
 
@@ -340,7 +388,7 @@ void MainComponent::getNextAudioBlock(const juce::AudioSourceChannelInfo& buffer
                 dryL = glitchHeldL;
                 dryR = glitchHeldR;
             }
-            else if (random.nextFloat() < glitchProbLocal * 0.004f)
+            else if (random.nextFloat() < glitchProbLocal * 0.01f)
             {
                 glitchSamplesRemaining = juce::jmax(4, (int)std::round(juce::jmap(glitchProbLocal, 0.0f, 1.0f,
                     12.0f,
