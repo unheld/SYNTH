@@ -1,6 +1,7 @@
 #pragma once
 #include <JuceHeader.h>
 #include <vector>
+#include <atomic>
 
 class MainComponent : public juce::AudioAppComponent,
                       public juce::MidiInputCallback,
@@ -153,6 +154,22 @@ private:
     juce::Rectangle<int> scopeRect;
     juce::Rectangle<int> osc3DRect;
     std::vector<float> waveformSnapshot;
+
+    std::atomic<float> smoothedLevel { 0.0f };
+    std::atomic<float> lowBandLevel { 0.0f };
+    std::atomic<float> midBandLevel { 0.0f };
+    std::atomic<float> highBandLevel { 0.0f };
+    std::atomic<float> delayFeedbackVisual { 0.0f };
+    std::atomic<float> glitchHoldVisual { 0.0f };
+
+    float meterSmoother = 0.0f;
+    float lowBandSmoother = 0.0f;
+    float midBandSmoother = 0.0f;
+    float highBandSmoother = 0.0f;
+    float delayVisualSmoother = 0.0f;
+    float glitchVisualSmoother = 0.0f;
+    float lowBandState = 0.0f;
+    float midBandState = 0.0f;
 
     // ===== Helpers =====
     void initialiseUi();

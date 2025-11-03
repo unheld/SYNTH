@@ -238,6 +238,14 @@ void MainComponent::getNextAudioBlock(const juce::AudioSourceChannelInfo& buffer
                 juce::jmin(currentSR * 1.25, (double)maxDelaySamples - 1.0))))
         : 1;
 
+    float blockPeak = 0.0f;
+    float lowState = lowBandState;
+    float midState = midBandState;
+    float lowAccum = 0.0f;
+    float midAccum = 0.0f;
+    float highAccum = 0.0f;
+    float glitchActivity = glitchSamplesRemaining > 0 ? 1.0f : 0.0f;
+
     for (int i = 0; i < bufferToFill.numSamples; ++i)
     {
         if (!audioEnabled && amplitudeEnvelope.isActive())
@@ -402,12 +410,57 @@ void MainComponent::getNextAudioBlock(const juce::AudioSourceChannelInfo& buffer
             glitchSamplesRemaining = 0;
         }
 
+        const float mono = r ? 0.5f * (dryL + dryR) : dryL;
+        blockPeak = juce::jmax(blockPeak, std::abs(mono));
+
+        lowState += 0.04f * (mono - lowState);
+        const float highPass = mono - lowState;
+        midState += 0.08f * (highPass - midState);
+        const float highComponent = highPass - midState;
+
+        lowAccum += std::abs(lowState);
+        midAccum += std::abs(midState);
+        highAccum += std::abs(highComponent);
+
+        if (glitchSamplesRemaining > 0)
+            glitchActivity = 1.0f;
+
         l[i] = dryL;
         if (r) r[i] = dryR;
 
         scopeBuffer.setSample(0, scopeWritePos, l[i]);
         scopeWritePos = (scopeWritePos + 1) % scopeBuffer.getNumSamples();
     }
+
+    lowBandState = lowState;
+    midBandState = midState;
+
+    const float invSamples = bufferToFill.numSamples > 0 ? 1.0f / (float)bufferToFill.numSamples : 0.0f;
+    const float lowAvg = juce::jlimit(0.0f, 1.5f, lowAccum * invSamples);
+    const float midAvg = juce::jlimit(0.0f, 1.5f, midAccum * invSamples);
+    const float highAvg = juce::jlimit(0.0f, 1.5f, highAccum * invSamples);
+    const float peak = juce::jlimit(0.0f, 1.2f, blockPeak);
+    const float delayEnergy = juce::jlimit(0.0f, 1.0f, juce::jmap(delayFeedback, 0.05f, 0.88f, 0.0f, 1.0f));
+
+    auto smoothValue = [](float current, float target, float attack, float release)
+    {
+        const float coeff = target > current ? attack : release;
+        return current + (target - current) * coeff;
+    };
+
+    meterSmoother = smoothValue(meterSmoother, peak, 0.45f, 0.08f);
+    lowBandSmoother = smoothValue(lowBandSmoother, lowAvg, 0.3f, 0.05f);
+    midBandSmoother = smoothValue(midBandSmoother, midAvg, 0.25f, 0.05f);
+    highBandSmoother = smoothValue(highBandSmoother, highAvg, 0.2f, 0.04f);
+    delayVisualSmoother = smoothValue(delayVisualSmoother, delayEnergy, 0.2f, 0.06f);
+    glitchVisualSmoother = smoothValue(glitchVisualSmoother, glitchActivity, 0.35f, 0.08f);
+
+    smoothedLevel.store(meterSmoother);
+    lowBandLevel.store(lowBandSmoother);
+    midBandLevel.store(midBandSmoother);
+    highBandLevel.store(highBandSmoother);
+    delayFeedbackVisual.store(delayVisualSmoother);
+    glitchHoldVisual.store(glitchVisualSmoother);
 }
 
 void MainComponent::releaseResources()
@@ -461,37 +514,68 @@ void MainComponent::paint(juce::Graphics& g)
                 diameter,
                 diameter);
 
+            const float driveNorm = juce::jlimit(0.0f, 1.0f, driveAmount);
+            const float delayNorm = juce::jlimit(0.0f, 1.0f, delayAmount);
+            const float chaosNorm = juce::jlimit(0.0f, 1.0f, chaosAmount);
+
+            const float level = juce::jlimit(0.0f, 1.0f, smoothedLevel.load());
+            const float lowBand = juce::jlimit(0.0f, 1.2f, lowBandLevel.load());
+            const float midBand = juce::jlimit(0.0f, 1.2f, midBandLevel.load());
+            const float highBand = juce::jlimit(0.0f, 1.2f, highBandLevel.load());
+            const float delayFeedbackEnergy = juce::jlimit(0.0f, 1.0f, delayFeedbackVisual.load());
+            const float glitchEnergy = juce::jlimit(0.0f, 1.0f, glitchHoldVisual.load());
+
+            const float hueBase = std::fmod(juce::jmap(driveNorm, 0.0f, 1.0f, 0.62f, 0.02f) + 1.0f, 1.0f);
+            const float brightness = juce::jlimit(0.2f, 1.0f, juce::jmap(delayNorm, 0.0f, 1.0f, 0.35f, 0.92f) + level * 0.12f);
+            const float saturation = juce::jlimit(0.25f, 1.0f, juce::jmap(chaosNorm, 0.0f, 1.0f, 0.55f, 0.95f) + highBand * 0.05f);
+
             juce::ColourGradient sphereGradient(
-                juce::Colour::fromRGB(18, 38, 88), sphereArea.getCentre(),
-                juce::Colour::fromRGB(3, 6, 16), sphereArea.getBottomRight(), true);
-            sphereGradient.addColour(0.1, juce::Colour::fromRGB(24, 70, 140));
-            sphereGradient.addColour(0.6, juce::Colour::fromRGB(6, 18, 36));
+                juce::Colour::fromHSV(hueBase, saturation, juce::jlimit(0.2f, 1.0f, brightness + level * 0.18f), 1.0f), sphereArea.getCentre(),
+                juce::Colour::fromHSV(std::fmod(hueBase + 0.11f, 1.0f), juce::jlimit(0.25f, 1.0f, saturation * 0.65f + midBand * 0.25f),
+                    juce::jlimit(0.15f, 1.0f, 0.25f + brightness * 0.65f), 1.0f),
+                sphereArea.getBottomRight(), true);
+            sphereGradient.addColour(0.18f, juce::Colour::fromHSV(std::fmod(hueBase + 0.18f, 1.0f),
+                juce::jlimit(0.3f, 1.0f, saturation * 0.85f + highBand * 0.25f),
+                juce::jlimit(0.2f, 1.0f, 0.3f + brightness * 0.55f + level * 0.12f), 1.0f));
+            sphereGradient.addColour(0.78f, juce::Colour::fromHSV(std::fmod(hueBase + 0.32f, 1.0f),
+                juce::jlimit(0.2f, 1.0f, saturation * 0.5f + delayFeedbackEnergy * 0.35f),
+                juce::jlimit(0.1f, 1.0f, 0.18f + brightness * 0.45f), 1.0f));
 
             g.setGradientFill(sphereGradient);
             g.fillEllipse(sphereArea);
 
-            g.setColour(juce::Colours::white.withAlpha(0.15f));
-            g.drawEllipse(sphereArea, 1.4f);
+            g.setColour(juce::Colour::fromHSV(std::fmod(hueBase + 0.02f, 1.0f),
+                juce::jlimit(0.25f, 1.0f, saturation * 0.55f + midBand * 0.2f),
+                juce::jlimit(0.15f, 1.0f, 0.4f + brightness * 0.35f + level * 0.2f),
+                juce::jlimit(0.1f, 0.6f, 0.22f + level * 0.25f)));
+            g.drawEllipse(sphereArea, juce::jlimit(0.8f, 1.8f, 1.0f + highBand * 0.6f));
 
             const auto centre = sphereArea.getCentre();
             const float outerRadius = sphereArea.getWidth() * 0.5f;
-            const float innerRadius = outerRadius * 0.35f;
-            const float activeRadius = outerRadius * 0.92f;
+            const float activeRadius = outerRadius * juce::jlimit(0.75f, 1.22f, 0.88f + level * 0.35f);
+            const float innerRadius = juce::jlimit(outerRadius * 0.18f, activeRadius * 0.92f,
+                outerRadius * juce::jmap(juce::jlimit(0.0f, 1.0f, lowBand), 0.0f, 1.0f, 0.3f, 0.48f));
 
-            // Draw a faint guide ring to suggest the equator of the sphere.
-            g.setColour(juce::Colours::white.withAlpha(0.05f));
-            g.drawEllipse(sphereArea.reduced(outerRadius * 0.18f), 1.0f);
+            g.setColour(juce::Colour::fromHSV(std::fmod(hueBase + 0.07f, 1.0f),
+                juce::jlimit(0.2f, 1.0f, saturation * 0.45f + midBand * 0.3f),
+                juce::jlimit(0.1f, 0.6f, 0.18f + brightness * 0.25f + lowBand * 0.1f),
+                juce::jlimit(0.05f, 0.35f, 0.12f + level * 0.15f)));
+            g.drawEllipse(sphereArea.reduced(outerRadius * 0.18f), juce::jlimit(0.6f, 1.4f, 0.8f + midBand * 0.4f));
 
             if (!waveformSnapshot.empty())
             {
                 juce::Path waveformPath;
                 const size_t count = waveformSnapshot.size();
+                const double timeNow = juce::Time::getMillisecondCounterHiRes() * 0.001;
 
                 for (size_t i = 0; i < count; ++i)
                 {
                     const float angle = juce::MathConstants<float>::twoPi * (float)i / (float)count;
                     const float sample = juce::jlimit(-1.0f, 1.0f, waveformSnapshot[i]);
-                    const float radius = juce::jmap(sample, -1.0f, 1.0f, innerRadius, activeRadius);
+                    const float breathing = std::sin(angle * 2.0f + (float)timeNow * 0.9f) * midBand * outerRadius * 0.05f;
+                    const float jitter = std::sin(angle * 5.0f + (float)timeNow * 3.0f) * highBand * outerRadius * (0.03f + glitchEnergy * 0.04f);
+                    const float warpedRadius = juce::jmap(sample, -1.0f, 1.0f, innerRadius, activeRadius) + breathing + jitter;
+                    const float radius = juce::jlimit(innerRadius * 0.7f, outerRadius * 1.2f, warpedRadius);
                     const float x = centre.x + std::cos(angle) * radius;
                     const float y = centre.y + std::sin(angle) * radius;
 
@@ -503,11 +587,59 @@ void MainComponent::paint(juce::Graphics& g)
 
                 waveformPath.closeSubPath();
 
-                g.setColour(juce::Colour::fromFloatRGBA(0.3f, 0.95f, 1.0f, 0.2f));
+                const float trailHue = std::fmod(hueBase + 0.18f + highBand * 0.05f, 1.0f);
+                const float trailSat = juce::jlimit(0.25f, 1.0f, saturation * 0.7f + midBand * 0.4f + glitchEnergy * 0.2f);
+                const float trailVal = juce::jlimit(0.25f, 1.0f, 0.3f + brightness * 0.7f + level * 0.25f);
+
+                g.setColour(juce::Colour::fromHSV(trailHue, trailSat, trailVal, juce::jlimit(0.15f, 0.85f, 0.25f + level * 0.5f + lowBand * 0.15f)));
                 g.fillPath(waveformPath);
 
-                g.setColour(juce::Colour::fromFloatRGBA(0.4f, 0.95f, 1.0f, 0.85f));
-                g.strokePath(waveformPath, juce::PathStrokeType(1.8f));
+                g.setColour(juce::Colour::fromHSV(std::fmod(trailHue + 0.02f, 1.0f),
+                    juce::jlimit(0.2f, 1.0f, trailSat * 0.85f + highBand * 0.25f),
+                    juce::jlimit(0.3f, 1.0f, trailVal * 0.85f + highBand * 0.2f), 1.0f));
+                g.strokePath(waveformPath, juce::PathStrokeType(juce::jlimit(1.1f, 3.6f, 1.3f + highBand * 2.0f + glitchEnergy * 0.7f)));
+
+                const float orbitRadius = outerRadius * juce::jlimit(1.05f, 1.6f, 1.2f + delayFeedbackEnergy * 0.45f);
+                const float orbitAngle = (float)(timeNow * 0.6);
+                const float orbitSkew = juce::jlimit(0.7f, 1.25f, 0.92f + midBand * 0.25f);
+                juce::Point<float> sat1(
+                    centre.x + std::sin(orbitAngle) * orbitRadius,
+                    centre.y + std::cos(orbitAngle) * orbitRadius * orbitSkew);
+
+                juce::Colour sat1Colour = juce::Colour::fromHSV(std::fmod(hueBase + 0.05f, 1.0f),
+                    juce::jlimit(0.35f, 1.0f, 0.65f + delayFeedbackEnergy * 0.35f),
+                    juce::jlimit(0.25f, 1.0f, 0.45f + brightness * 0.45f + level * 0.25f),
+                    juce::jlimit(0.15f, 0.9f, 0.28f + delayFeedbackEnergy * 0.55f));
+
+                g.setColour(sat1Colour.withAlpha(juce::jlimit(0.1f, 0.9f, sat1Colour.getFloatAlpha())));
+                g.fillEllipse(juce::Rectangle<float>(10.0f, 10.0f).withCentre(sat1));
+
+                juce::Path feedbackLink;
+                feedbackLink.startNewSubPath(centre);
+                feedbackLink.lineTo(sat1);
+                g.setColour(sat1Colour.withAlpha(juce::jlimit(0.08f, 0.6f, 0.2f + delayFeedbackEnergy * 0.45f)));
+                g.strokePath(feedbackLink, juce::PathStrokeType(1.2f));
+
+                const float glitchOrbit = outerRadius * juce::jlimit(1.2f, 1.85f, 1.35f + highBand * 0.35f + glitchEnergy * 0.2f);
+                const float glitchAngle = (float)(timeNow * 1.05);
+                const float jitterAmount = glitchEnergy * outerRadius * 0.16f;
+                juce::Point<float> sat2(
+                    centre.x + std::cos(glitchAngle) * glitchOrbit + std::sin((float)timeNow * 7.0f) * jitterAmount,
+                    centre.y + std::sin(glitchAngle) * glitchOrbit + std::cos((float)timeNow * 5.0f) * jitterAmount);
+
+                juce::Colour sat2Colour = juce::Colour::fromHSV(std::fmod(hueBase + 0.22f, 1.0f),
+                    juce::jlimit(0.35f, 1.0f, 0.75f + glitchEnergy * 0.3f + highBand * 0.25f),
+                    juce::jlimit(0.3f, 1.0f, 0.35f + brightness * 0.55f + highBand * 0.25f),
+                    juce::jlimit(0.15f, 0.95f, 0.22f + glitchEnergy * 0.65f));
+
+                g.setColour(sat2Colour.withAlpha(juce::jlimit(0.12f, 0.95f, sat2Colour.getFloatAlpha())));
+                g.fillEllipse(juce::Rectangle<float>(7.0f, 7.0f).withCentre(sat2));
+
+                juce::Path glitchLink;
+                glitchLink.startNewSubPath(centre);
+                glitchLink.lineTo(sat2);
+                g.setColour(sat2Colour.withAlpha(juce::jlimit(0.08f, 0.7f, 0.18f + glitchEnergy * 0.6f)));
+                g.strokePath(glitchLink, juce::PathStrokeType(1.0f));
             }
         }
     }
