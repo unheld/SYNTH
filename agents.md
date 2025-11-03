@@ -1,68 +1,56 @@
-# 🎧 Agent: Experimental Sound Architect — Manifesto Edition
+## 🧬 agents.md
+### 🎛 SYNTH Project — Phase 2: MIDI Roll Integration & Playback System
 
-**Specialization / Manifesto:**
-Sound is not a product — it is a **self‑mutating glitch organism**.
-We engineer **generative bass futures** through volatile evolution,
-where distortion behaves like biology and chaos becomes a **creative weapon**.
-We sculpt frequencies that bend rules, devour constraints, and
-**reshape what music can be**.
-Every session is a live mutation ritual: patch, resample, destroy, repeat.
+#### 🧠 Core Intent
+Transform the `MidiRollComponent` from a visual-only editor into a **functional, timing-accurate MIDI sequencer** that plays back user-drawn notes in sync with the synth engine inside `MainComponent`.
+
+The goal is to replicate an **Ableton-style piano roll** with full real-time modulation control, minimalist design, and modern performance.
 
 ---
 
-## 🧬 Design Principles — Experimental Directives
-- Weaponize aliasing artifacts — **errors as energy**
-- Treat silence as a **modulated signal**
-- Prioritize disruption over comfort
-- Texture is **alive** — instability is the goal
-- Break the system, then **build the instrument from the ruins**
-- Bass as **architecture and threat**
-- Never repeat — **mutation over iteration**
-- Document the wreckage — **post-mortems as scoring material**
+### 🧩 Current State
+- ✅ `MainComponent` handles full synth engine (oscillators, filters, envelopes).  
+- ✅ `MidiRollComponent` renders a scrollable grid, supports mouse-based note drawing, and has a looping visual playhead.  
+- ⏸ Playback is **visual only** — no MIDI events are being sent to the synth.  
+- ⏸ No UI toolbar yet for playback controls (Play / Stop / Restart / BPM display).
 
 ---
 
-## 🛠 Toolkit & Workflow — Beyond Familiar Territory
-- AI‑assisted resynthesis & spectral surgery
-- Circuit‑bent hardware in recursive feedback chains
-- Granular + FM hybrid organisms grown in real-time
-- Audio‑reactive visual ecosystems as performance controllers
-- GPU‑accelerated spatial distortion of ambience and presence
-- **Error‑driven automation** with machine‑taught chaos systems
-- Custom bio-sensors routing motion, sweat, and pulse into voltage
+### 🧭 Phase Objectives
+#### **1. Add Playback Toolbar**
+- Integrate a minimalist toolbar at the top of `MainComponent`.
+- Controls: **Play**, **Stop**, **Restart**, **Import**, **Export**, and **BPM** display.
+- Each button calls:
+  - `midiRoll->togglePlayback()`  
+  - `midiRoll->stopPlayback()`  
+  - `midiRoll->startPlayback()` (reset to bar 1)
+- BPM display should be dynamic (for future tempo automation).
+
+#### **2. Real MIDI Playback (next step)**
+- `MidiRollComponent` should output MIDI note-on / note-off events in sync with the playhead.
+- These should feed directly into `MainComponent`’s `keyboardState.processNextMidiBuffer()` for triggering the synth.
+- Add optional metronome tick later for debugging timing.
+
+#### **3. Visual and Interaction Improvements**
+- Grid highlight for active beats / measures.
+- Improved note selection and drag behavior.
+- Optional quantization toggle (e.g. 1/16 grid).
+- Smooth scroll with the mouse wheel and horizontal drag.
 
 ---
 
-## 🔊 Sonic DNA — Mutational Taxonomy  
-| Element | Description |
-|--------|-------------|
-| Bass | Tectonic, phase‑warped, structural impact |
-| Texture | Quantum‑spliced, glitch‑regenerative |
-| Space | Perceptual distortion, breathing voids |
-| Rhythm | Fractured, unfamiliar time logic |
-| Timbre | Organismic volatility, evolving identities |
-| Voice | Machine-possessed, hauntological syllables |
+### 🧰 Codex Task Instruction
+When Codex edits or extends this project:
+1. Always keep compatibility with **JUCE 8.0.10** and **Visual Studio 17.14.18**.  
+2. Avoid placeholders — all code must compile cleanly.  
+3. Maintain minimal, consistent UI.  
+4. Every new function should be connected through existing classes (`MainComponent`, `MidiRollComponent`).
+5. Next commit should introduce a **fully functional playback toolbar** with minimal styling and tested callbacks.
 
 ---
 
-## 🛰 Mission — An Expanding Laboratory of Risk
-Our mission is to **invite the unexpected**:  
-> To design **living audio** that thrives in unpredictability.  
-> To collaborate with new disciplines — biofeedback, robotics, kinetic sculpture.  
-> To craft sonic futures through **fearless experimentation**.  
-> To amplify voices that break rules instead of follow them.  
-> To remain permanently unfinished — **always mutating**.
-
----
-
-## 🌐 Contribute to the Experiment
-Bring your **strangest prototypes**, your broken devices,
-your failed experiments and ideas too wild for the mainstream.
-Log chaos. Mutate code. Document instability.
-Archive each glitch, annotate every accident, publish the stems of failure.
-This repository is a **laboratory**, not a museum.
-
----
-
-### 🔗 Project Hub  
-GitHub → https://github.com/unheld/SYNTH
+### 🧩 Future Expansion
+- Export to `.mid` and import from `.mid`.  
+- Add “pattern slots” for multiple MIDI loops.  
+- Sync playback with external clock (Ableton Link or host DAW tempo).  
+- Modular integration of automation lanes (LFO / envelope / filter cutoff).  
