@@ -6,7 +6,8 @@
 namespace
 {
     // Simple grid quantisation: 1/16-note by default
-    constexpr int kQuantizeDivision = 16; // 16 -> sixteenth notes
+    constexpr int kQuantizeDivision = 32; // 32 -> thirty-second notes
+
 
     void quantizeNote(MidiRollComponent::Note& n, double maxBeats)
     {
@@ -239,7 +240,7 @@ void MidiRollComponent::paint(juce::Graphics& g)
         if (isC)
         {
             g.setColour(juce::Colours::white.withAlpha(0.8f));
-            g.drawText(juce::MidiMessage::getMidiNoteName(note, true, true, 4),
+            g.drawText(juce::MidiMessage::getMidiNoteName(note, true, true, 3),
                        juce::Rectangle<int>(0, y, keyStrip.getWidth() - 2, kNoteHeight),
                        juce::Justification::centredRight, false);
         }
