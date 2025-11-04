@@ -1,6 +1,8 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include <atomic>
+#include <vector>
 
 class MidiRollComponent : public juce::Component,
                           private juce::Timer
@@ -27,7 +29,11 @@ public:
     void startPlayback();
     void stopPlayback();
     void togglePlayback();
-    bool isCurrentlyPlaying() const noexcept { return isPlaying; }
+    bool isCurrentlyPlaying() const noexcept { return isPlaying.load(); }
+
+    void renderNextMidiBlock (juce::MidiBuffer& buffer, int numSamples, double sampleRate);
+
+    double getBpm() const noexcept { return bpm; }
 
 private:
     // Piano roll configuration
@@ -40,16 +46,19 @@ private:
     static constexpr int    kLeftMargin       = 40;
 
     std::vector<Note> notes;
+    mutable juce::SpinLock noteMutex;
 
     // View state
     double scrollX = 0.0;
 
     // Playback
-    bool   isPlaying = false;
-    double playheadBeat = 0.0;
+    std::atomic<bool>   isPlaying { false };
+    std::atomic<double> playheadBeat { 0.0 };
     double bpm = 120.0;
     double secondsPerBeat = 0.5;
-    double lastUpdateTime = 0.0;
+
+    std::atomic<bool> flushActiveNotes { false };
+    std::vector<int> activeNotes;
 
     // Drag/edit state
     int     draggingNoteIndex = -1;
@@ -63,6 +72,7 @@ private:
     double xToBeat (int x) const;
     int    beatToX (double beat) const;
     int    hitTestNote (int x, int y) const;
+    int    hitTestNoteUnlocked (int x, int y) const;
 
     void timerCallback() override;
 
