@@ -46,12 +46,12 @@ MainComponent::MainComponent()
     lfoDepthSmoothed.setCurrentAndTargetValue(lfoDepth);
     driveSmoothed.setCurrentAndTargetValue(driveAmount);
 
+    midiRoll = std::make_unique<MidiRollComponent>();
+    addAndMakeVisible (midiRoll.get());
+
     initialiseUi();
     initialiseMidiInputs();
     initialiseKeyboard();
-    
-midiRoll = std::make_unique<MidiRollComponent>();
-addAndMakeVisible(midiRoll.get());
 
     startTimerHz(scopeTimerHz);
 }
@@ -289,6 +289,12 @@ void MainComponent::getNextAudioBlock(const juce::AudioSourceChannelInfo& buffer
         return;
 
     bufferToFill.buffer->clear(bufferToFill.startSample, bufferToFill.numSamples);
+
+    juce::MidiBuffer midiRollBuffer;
+    if (midiRoll)
+        midiRoll->renderNextMidiBlock(midiRollBuffer, bufferToFill.numSamples, currentSR);
+
+    keyboardState.processNextMidiBuffer(midiRollBuffer, bufferToFill.startSample, bufferToFill.numSamples, true);
 
     auto* l = bufferToFill.buffer->getWritePointer(0, bufferToFill.startSample);
     auto* r = bufferToFill.buffer->getNumChannels() > 1
@@ -971,7 +977,8 @@ void MainComponent::initialiseToolbar()
         juce::Logger::outputDebugString("MIDI export requested");
     };
 
-    bpmLabel.setText(juce::String(defaultBpmDisplay) + " BPM", juce::dontSendNotification);
+    const double bpmToDisplay = midiRoll ? midiRoll->getBpm() : (double) defaultBpmDisplay;
+    bpmLabel.setText(juce::String(juce::roundToInt(bpmToDisplay)) + " BPM", juce::dontSendNotification);
     bpmLabel.setJustificationType(juce::Justification::centred);
     bpmLabel.setColour(juce::Label::textColourId, juce::Colours::white.withAlpha(0.85f));
     bpmLabel.setFont(juce::Font(juce::FontOptions(14.0f, juce::Font::bold)));
