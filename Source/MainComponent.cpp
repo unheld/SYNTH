@@ -915,7 +915,8 @@ void MainComponent::initialiseToolbar()
         button.setColour(juce::TextButton::buttonOnColourId, juce::Colours::transparentBlack);
         button.setColour(juce::TextButton::textColourOffId, juce::Colours::white.withAlpha(0.9f));
         button.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
-        button.setColour(juce::TextButton::outlineColourId, juce::Colours::white.withAlpha(0.2f));
+       
+
         button.setWantsKeyboardFocus(false);
         button.setMouseCursor(juce::MouseCursor::PointingHandCursor);
         addAndMakeVisible(button);
@@ -973,7 +974,9 @@ void MainComponent::initialiseToolbar()
     bpmLabel.setText(juce::String(defaultBpmDisplay) + " BPM", juce::dontSendNotification);
     bpmLabel.setJustificationType(juce::Justification::centred);
     bpmLabel.setColour(juce::Label::textColourId, juce::Colours::white.withAlpha(0.85f));
-    bpmLabel.setFont(juce::Font(14.0f, juce::Font::bold));
+    bpmLabel.setFont(juce::Font(juce::FontOptions(14.0f, juce::Font::bold)));
+
+
     bpmLabel.setBorderSize(juce::BorderSize<int>());
     addAndMakeVisible(bpmLabel);
 
