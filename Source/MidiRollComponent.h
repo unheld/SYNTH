@@ -40,8 +40,8 @@ private:
     static constexpr int    kMinNote          = 36;        // C2
     static constexpr int    kMaxNote          = 84;        // C6
     static constexpr int    kNoteHeight       = 18;
-    static constexpr double kTotalLengthBeats = 32.0;      // 8 bars @ 4/4
-    static constexpr float  kPixelsPerBeat    = 60.0f;
+    static constexpr double kMinLoopBeats     = 4.0;       // 1 bar @ 4/4
+    static constexpr double kMaxLoopBeats     = 32.0;      // 8 bars @ 4/4
     static constexpr int    kTopMargin        = 4;
     static constexpr int    kLeftMargin       = 40;
 
@@ -49,7 +49,9 @@ private:
     mutable juce::SpinLock noteMutex;
 
     // View state
-    double scrollX = 0.0;
+    double scrollY = 0.0;
+
+    std::atomic<double> loopLengthBeats { kMinLoopBeats };
 
     // Playback
     std::atomic<bool>   isPlaying { false };
@@ -71,6 +73,12 @@ private:
     int    yToPitch (int y) const;
     double xToBeat (int x) const;
     int    beatToX (double beat) const;
+    double getLoopLengthBeats() const noexcept;
+    double getPixelsPerBeat() const noexcept;
+    double getContentHeight() const noexcept;
+    void   clampVerticalScroll();
+    void   setLoopLengthBeats (double beats);
+    void   updateLoopLengthFromNotes();
     int    hitTestNote (int x, int y) const;
     int    hitTestNoteUnlocked (int x, int y) const;
 
