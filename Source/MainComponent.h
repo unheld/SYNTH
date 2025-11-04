@@ -3,7 +3,15 @@
 #include <vector>
 #include <atomic>
 #include "MidiRollComponent.h"
+#include "ui/ParameterKnob.h"
 
+class KnobGroupComponent;
+class OscillatorPreviewComponent;
+class FilterResponseComponent;
+class EnvelopeGraphComponent;
+class LfoPreviewComponent;
+class EffectIntensityMeter;
+class OutputMeterComponent;
 
 class MainComponent : public juce::AudioAppComponent,
                       public juce::MidiInputCallback,
@@ -25,6 +33,34 @@ public:
     void handleIncomingMidiMessage(juce::MidiInput* source, const juce::MidiMessage& message) override;
     void handleNoteOn(juce::MidiKeyboardState*, int midiChannel, int midiNoteNumber, float velocity) override;
     void handleNoteOff(juce::MidiKeyboardState*, int midiChannel, int midiNoteNumber, float /*velocity*/) override;
+
+    enum class FilterType
+    {
+        LowPass = 0,
+        BandPass,
+        HighPass,
+        Notch
+    };
+
+    float getCutoffHz() const noexcept { return cutoffHz; }
+    float getResonanceQ() const noexcept { return resonanceQ; }
+    float getDriveAmount() const noexcept { return driveAmount; }
+    float getOutputGain() const noexcept { return outputGain; }
+    float getLfoRateHz() const noexcept { return lfoRateHz; }
+    float getLfoDepthAmount() const noexcept { return lfoDepth; }
+    float getAttackMs() const noexcept { return attackMs; }
+    float getDecayMs() const noexcept { return decayMs; }
+    float getSustainLevel() const noexcept { return sustainLevel; }
+    float getReleaseMs() const noexcept { return releaseMs; }
+    float getCurrentLevel() const noexcept { return smoothedLevel.load(); }
+    float getDelayAmount() const noexcept { return delayAmount; }
+    float getChaosAmount() const noexcept { return chaosAmount; }
+    float getCrushAmount() const noexcept { return crushAmount; }
+    float getAutoPanAmount() const noexcept { return autoPanAmount; }
+    float getGlitchAmount() const noexcept { return glitchProbability; }
+    double getCurrentSampleRate() const noexcept { return currentSR; }
+    FilterType getFilterType() const noexcept { return filterType; }
+    float renderLfoShape(float phase) const noexcept;
 
 private:
     // ===== Synth state =====
@@ -68,6 +104,7 @@ private:
     // Filter (cutoff + resonance + per-channel IIR)
     float   cutoffHz = 1000.0f;
     float   resonanceQ = 0.707f;
+    FilterType filterType = FilterType::LowPass;
     juce::IIRFilter filterL, filterR;
 
     float   lfoCutModAmt = 0.0f;
@@ -116,37 +153,35 @@ private:
     juce::TextButton exportButton { "Export" };
     juce::Label     bpmLabel;
 
-    juce::Slider waveKnob, gainKnob, attackKnob, decayKnob, sustainKnob, widthKnob;
-    juce::Slider pitchKnob, cutoffKnob, resonanceKnob, releaseKnob;
-    juce::Slider lfoKnob, lfoDepthKnob, filterModKnob, lfoModeKnob, lfoStartKnob;
-    juce::Slider driveKnob, crushKnob, subMixKnob, envFilterKnob;
-    juce::Slider chaosKnob, delayKnob, autoPanKnob, glitchKnob;
+    ParameterKnob waveKnob, gainKnob, attackKnob, decayKnob, sustainKnob, widthKnob;
+    ParameterKnob pitchKnob, cutoffKnob, resonanceKnob, releaseKnob;
+    ParameterKnob lfoKnob, lfoDepthKnob, filterModKnob, lfoModeKnob, lfoStartKnob;
+    ParameterKnob driveKnob, crushKnob, subMixKnob, envFilterKnob;
+    ParameterKnob chaosKnob, delayKnob, autoPanKnob, glitchKnob;
+    ParameterKnob glideKnob;
 
-    juce::Label waveLabel, waveValue;
-    juce::Label gainLabel, gainValue;
-    juce::Label attackLabel, attackValue;
-    juce::Label decayLabel, decayValue;
-    juce::Label sustainLabel, sustainValue;
-    juce::Label widthLabel, widthValue;
-    juce::Label pitchLabel, pitchValue;
-    juce::Label cutoffLabel, cutoffValue;
-    juce::Label resonanceLabel, resonanceValue;
-    juce::Label releaseLabel, releaseValue;
-    juce::Label lfoLabel, lfoValue;
-    juce::Label lfoDepthLabel, lfoDepthValue;
-    juce::Label filterModLabel, filterModValue;
-    juce::Label lfoModeLabel, lfoModeValue;
-    juce::Label lfoStartLabel, lfoStartValue;
-    juce::Label driveLabel, driveValue;
-    juce::Label crushLabel, crushValue;
-    juce::Label subMixLabel, subMixValue;
-    juce::Label envFilterLabel, envFilterValue;
-    juce::Label chaosLabel, chaosValueLabel;
-    juce::Label delayLabel, delayValue;
-    juce::Label autoPanLabel, autoPanValue;
-    juce::Label glitchLabel, glitchValue;
+    juce::ComboBox filterTypeBox;
+    juce::ComboBox lfoDestinationBox;
+    juce::ComboBox lfoShapeBox;
+    juce::ToggleButton envelopeToFilterToggle { "Use for Filter" };
+    juce::ToggleButton envelopeToAmpToggle { "Use for Amp" };
+    juce::ToggleButton monoToggle { "Mono" };
 
     juce::TextButton audioToggle{ "Audio ON" };
+
+    std::unique_ptr<KnobGroupComponent> oscillatorGroup;
+    std::unique_ptr<KnobGroupComponent> filterGroup;
+    std::unique_ptr<KnobGroupComponent> envelopeGroup;
+    std::unique_ptr<KnobGroupComponent> lfoGroup;
+    std::unique_ptr<KnobGroupComponent> effectsGroup;
+    std::unique_ptr<KnobGroupComponent> masterGroup;
+
+    std::unique_ptr<OscillatorPreviewComponent> oscillatorPreview;
+    std::unique_ptr<FilterResponseComponent> filterGraph;
+    std::unique_ptr<EnvelopeGraphComponent> envelopeGraph;
+    std::unique_ptr<LfoPreviewComponent> lfoPreview;
+    std::unique_ptr<EffectIntensityMeter> effectsMeter;
+    std::unique_ptr<OutputMeterComponent> outputMeter;
     bool audioEnabled = true;
 
     // ===== MIDI keyboard UI =====
@@ -179,6 +214,12 @@ private:
     float glitchVisualSmoother = 0.0f;
     float lowBandState = 0.0f;
     float midBandState = 0.0f;
+    float glideTimeMs = 0.0f;
+    bool envelopeToFilterEnabled = true;
+    bool envelopeToAmpEnabled = true;
+    bool monoModeEnabled = true;
+    int lfoDestinationChoice = 0;
+    int lfoShapeChoice = 0;
 
     // ===== Helpers =====
     void initialiseUi();
@@ -188,10 +229,9 @@ private:
     void initialiseMidiInputs();
     void initialiseKeyboard();
     void configureRotarySlider(juce::Slider& slider);
-    void configureCaptionLabel(juce::Label& label, const juce::String& text);
-    void configureValueLabel(juce::Label& label);
     void updateAmplitudeEnvelope();
     void triggerLfo();
+    void updateGlideSmoother();
 
     void resetSmoothers(double sampleRate);
     void setTargetFrequency(float newFrequency, bool force = false);

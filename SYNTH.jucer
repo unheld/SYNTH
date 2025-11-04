@@ -12,6 +12,12 @@
             file="Source/MidiRollComponent.cpp"/>
       <FILE id="QUIjtw" name="MainComponent.cpp" compile="1" resource="0"
             file="Source/MainComponent.cpp"/>
+      <GROUP id="{1B5223B7-6C3E-4A49-8654-158AC719DD40}" name="ui">
+        <FILE id="N3n9m4" name="ParameterKnob.h" compile="0" resource="0"
+              file="Source/ui/ParameterKnob.h"/>
+        <FILE id="eG7T9Z" name="ParameterKnob.cpp" compile="1" resource="0"
+              file="Source/ui/ParameterKnob.cpp"/>
+      </GROUP>
     </GROUP>
   </MAINGROUP>
   <MODULES>
