@@ -1,5 +1,8 @@
 #include "MidiRollComponent.h"
 
+#include <algorithm>
+#include <cmath>
+
 //==============================================================================
 
 MidiRollComponent::MidiRollComponent()
@@ -12,7 +15,12 @@ MidiRollComponent::MidiRollComponent()
 
 void MidiRollComponent::clearNotes()
 {
-    notes.clear();
+    {
+        const juce::SpinLock::ScopedLockType lock (noteMutex);
+        notes.clear();
+    }
+
+    flushActiveNotes.store (true);
     repaint();
 }
 
@@ -46,7 +54,7 @@ int MidiRollComponent::beatToX (double beat) const
     return (int) std::round (worldX - scrollX) + kLeftMargin;
 }
 
-int MidiRollComponent::hitTestNote (int x, int y) const
+int MidiRollComponent::hitTestNoteUnlocked (int x, int y) const
 {
     for (int i = (int) notes.size() - 1; i >= 0; --i)
     {
@@ -62,6 +70,12 @@ int MidiRollComponent::hitTestNote (int x, int y) const
     return -1;
 }
 
+int MidiRollComponent::hitTestNote (int x, int y) const
+{
+    const juce::SpinLock::ScopedLockType lock (noteMutex);
+    return hitTestNoteUnlocked (x, y);
+}
+
 //==============================================================================
 // Painting
 
@@ -71,6 +85,12 @@ void MidiRollComponent::paint (juce::Graphics& g)
 
     const auto bounds = getLocalBounds();
     const int  height = bounds.getHeight();
+
+    std::vector<Note> noteSnapshot;
+    {
+        const juce::SpinLock::ScopedLockType lock (noteMutex);
+        noteSnapshot = notes;
+    }
 
     // Piano-key strip
     juce::Rectangle<int> keyStrip (0, 0, kLeftMargin, height);
@@ -122,9 +142,9 @@ void MidiRollComponent::paint (juce::Graphics& g)
     }
 
     // Notes
-    for (size_t i = 0; i < notes.size(); ++i)
+    for (size_t i = 0; i < noteSnapshot.size(); ++i)
     {
-        const auto& n = notes[i];
+        const auto& n = noteSnapshot[i];
         const int noteY = pitchToY (n.midiNote) + 1;
         const int noteH = kNoteHeight - 3;
         const int noteX = beatToX (n.startBeat);
@@ -144,9 +164,9 @@ void MidiRollComponent::paint (juce::Graphics& g)
     }
 
     // Playhead
-    if (isPlaying)
+    if (isPlaying.load())
     {
-        const int playX = beatToX (playheadBeat);
+        const int playX = beatToX (playheadBeat.load());
         g.setColour (juce::Colours::yellow.withAlpha (0.8f));
         g.drawLine ((float) playX, 0.0f, (float) playX, (float) height, 2.0f);
     }
@@ -161,25 +181,111 @@ void MidiRollComponent::resized()
 
 void MidiRollComponent::startPlayback()
 {
-    if (!isPlaying)
+    if (! isCurrentlyPlaying())
     {
-        isPlaying = true;
-        playheadBeat = 0.0;
-        lastUpdateTime = juce::Time::getMillisecondCounterHiRes() * 0.001;
+        playheadBeat.store (0.0);
+        flushActiveNotes.store (true);
+        isPlaying.store (true);
     }
 }
 
 void MidiRollComponent::stopPlayback()
 {
-    isPlaying = false;
-    playheadBeat = 0.0;
+    isPlaying.store (false);
+    playheadBeat.store (0.0);
+    flushActiveNotes.store (true);
     repaint();
 }
 
 void MidiRollComponent::togglePlayback()
 {
-    if (isPlaying) stopPlayback();
-    else startPlayback();
+    if (isCurrentlyPlaying())
+        stopPlayback();
+    else
+        startPlayback();
+}
+
+//==============================================================================
+void MidiRollComponent::renderNextMidiBlock (juce::MidiBuffer& buffer, int numSamples, double sampleRate)
+{
+    if (numSamples <= 0 || sampleRate <= 0.0)
+        return;
+
+    if (flushActiveNotes.exchange (false))
+    {
+        for (int midiNote : activeNotes)
+            buffer.addEvent (juce::MidiMessage::noteOff (1, midiNote), 0);
+
+        activeNotes.clear();
+    }
+
+    if (! isCurrentlyPlaying())
+        return;
+
+    const double beatsPerSecond = bpm / 60.0;
+    const double beatsPerSample = beatsPerSecond / sampleRate;
+    const double blockBeats     = beatsPerSample * (double) numSamples;
+
+    if (blockBeats <= 0.0)
+        return;
+
+    double startBeat = playheadBeat.load();
+
+    std::vector<Note> noteSnapshot;
+    {
+        const juce::SpinLock::ScopedLockType lock (noteMutex);
+        noteSnapshot = notes;
+    }
+
+    auto normaliseBeat = [] (double beat)
+    {
+        double b = std::fmod (beat, kTotalLengthBeats);
+        if (b < 0.0)
+            b += kTotalLengthBeats;
+        return b;
+    };
+
+    auto addEventIfInBlock = [&] (double rawBeat, bool isNoteOn, int midiNote)
+    {
+        double beat = normaliseBeat (rawBeat);
+
+        double deltaBeats = beat - startBeat;
+        while (deltaBeats < 0.0)
+            deltaBeats += kTotalLengthBeats;
+
+        if (deltaBeats < 0.0 || deltaBeats >= blockBeats)
+            return;
+
+        int sample = (int) std::round (deltaBeats / beatsPerSample);
+        sample = juce::jlimit (0, juce::jmax (0, numSamples - 1), sample);
+
+        if (isNoteOn)
+        {
+            buffer.addEvent (juce::MidiMessage::noteOn (1, midiNote, (juce::uint8) 100), sample);
+            if (std::find (activeNotes.begin(), activeNotes.end(), midiNote) == activeNotes.end())
+                activeNotes.push_back (midiNote);
+        }
+        else
+        {
+            buffer.addEvent (juce::MidiMessage::noteOff (1, midiNote), sample);
+            activeNotes.erase (std::remove (activeNotes.begin(), activeNotes.end(), midiNote), activeNotes.end());
+        }
+    };
+
+    for (const auto& note : noteSnapshot)
+    {
+        addEventIfInBlock (note.startBeat, true, note.midiNote);
+
+        const double noteLength = std::max (0.0, note.lengthBeats);
+        addEventIfInBlock (note.startBeat + noteLength, false, note.midiNote);
+    }
+
+    double newBeat = startBeat + blockBeats;
+    newBeat = std::fmod (newBeat, kTotalLengthBeats);
+    if (newBeat < 0.0)
+        newBeat += kTotalLengthBeats;
+
+    playheadBeat.store (newBeat);
 }
 
 //==============================================================================
@@ -187,20 +293,8 @@ void MidiRollComponent::togglePlayback()
 
 void MidiRollComponent::timerCallback()
 {
-    if (isPlaying)
-    {
-        double now = juce::Time::getMillisecondCounterHiRes() * 0.001;
-        double dt = now - lastUpdateTime;
-        lastUpdateTime = now;
-
-        double beatsPerSecond = bpm / 60.0;
-        playheadBeat += beatsPerSecond * dt;
-
-        if (playheadBeat >= kTotalLengthBeats)
-            playheadBeat = 0.0; // loop
-
+    if (isCurrentlyPlaying())
         repaint();
-    }
 }
 
 //==============================================================================
@@ -218,22 +312,28 @@ void MidiRollComponent::mouseDown (const juce::MouseEvent& e)
 
     if (draggingNoteIndex >= 0)
     {
-        auto& n = notes[(size_t) draggingNoteIndex];
-        if (e.mods.isRightButtonDown())
+        const juce::SpinLock::ScopedLockType lock (noteMutex);
+
+        if (draggingNoteIndex >= 0 && draggingNoteIndex < (int) notes.size())
         {
-            notes.erase (notes.begin() + draggingNoteIndex);
-            draggingNoteIndex = -1;
-            repaint();
-            return;
+            auto& n = notes[(size_t) draggingNoteIndex];
+            if (e.mods.isRightButtonDown())
+            {
+                notes.erase (notes.begin() + draggingNoteIndex);
+                draggingNoteIndex = -1;
+                flushActiveNotes.store (true);
+            }
+            else
+            {
+                const int noteX = beatToX (n.startBeat);
+                const int noteWidth = (int) std::round (n.lengthBeats * kPixelsPerBeat);
+                const bool nearRightEdge = (x > noteX + noteWidth - 6);
+                resizingNote = nearRightEdge;
+
+                if (! resizingNote)
+                    dragOffsetBeat = xToBeat (x) - n.startBeat;
+            }
         }
-
-        const int noteX = beatToX (n.startBeat);
-        const int noteWidth = (int) std::round (n.lengthBeats * kPixelsPerBeat);
-        const bool nearRightEdge = (x > noteX + noteWidth - 6);
-        resizingNote = nearRightEdge;
-
-        if (!resizingNote)
-            dragOffsetBeat = xToBeat (x) - n.startBeat;
     }
     else
     {
@@ -241,8 +341,11 @@ void MidiRollComponent::mouseDown (const juce::MouseEvent& e)
         n.midiNote = yToPitch (y);
         n.startBeat = juce::jlimit (0.0, kTotalLengthBeats - 0.25, xToBeat (x));
         n.lengthBeats = 1.0;
-        notes.push_back (n);
-        draggingNoteIndex = (int) notes.size() - 1;
+        {
+            const juce::SpinLock::ScopedLockType lock (noteMutex);
+            notes.push_back (n);
+            draggingNoteIndex = (int) notes.size() - 1;
+        }
         resizingNote = true;
     }
 
@@ -251,23 +354,34 @@ void MidiRollComponent::mouseDown (const juce::MouseEvent& e)
 
 void MidiRollComponent::mouseDrag (const juce::MouseEvent& e)
 {
-    if (draggingNoteIndex < 0 || draggingNoteIndex >= (int) notes.size()) return;
-    auto& n = notes[(size_t) draggingNoteIndex];
-    const auto p = e.getPosition();
+    bool changed = false;
 
-    if (resizingNote)
     {
-        const double endBeat = juce::jlimit (n.startBeat + 0.1, kTotalLengthBeats, xToBeat (p.x));
-        n.lengthBeats = endBeat - n.startBeat;
-    }
-    else
-    {
-        const double newStart = juce::jlimit (0.0, kTotalLengthBeats - n.lengthBeats, xToBeat (p.x) - dragOffsetBeat);
-        n.startBeat = newStart;
-        n.midiNote = yToPitch (p.y);
+        const juce::SpinLock::ScopedLockType lock (noteMutex);
+
+        if (draggingNoteIndex < 0 || draggingNoteIndex >= (int) notes.size())
+            return;
+
+        auto& n = notes[(size_t) draggingNoteIndex];
+        const auto p = e.getPosition();
+
+        if (resizingNote)
+        {
+            const double endBeat = juce::jlimit (n.startBeat + 0.1, kTotalLengthBeats, xToBeat (p.x));
+            n.lengthBeats = endBeat - n.startBeat;
+        }
+        else
+        {
+            const double newStart = juce::jlimit (0.0, kTotalLengthBeats - n.lengthBeats, xToBeat (p.x) - dragOffsetBeat);
+            n.startBeat = newStart;
+            n.midiNote = yToPitch (p.y);
+        }
+
+        changed = true;
     }
 
-    repaint();
+    if (changed)
+        repaint();
 }
 
 void MidiRollComponent::mouseUp (const juce::MouseEvent&)
