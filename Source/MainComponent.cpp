@@ -1,7 +1,6 @@
 #include "MainComponent.h"
 #include <cmath>
 #include <algorithm>
-#include <complex>
 
 namespace
 {
@@ -23,569 +22,6 @@ namespace
     constexpr int keyboardMinHeight = 60;
     constexpr int scopeTimerHz = 60;
 }
-
-class ParameterKnob : public juce::Component
-{
-public:
-    ParameterKnob(const juce::String& caption = {})
-    {
-        captionLabel.setText(caption, juce::dontSendNotification);
-        captionLabel.setJustificationType(juce::Justification::centred);
-        captionLabel.setColour(juce::Label::textColourId, juce::Colours::white.withAlpha(0.85f));
-        addAndMakeVisible(captionLabel);
-
-        addAndMakeVisible(knob);
-
-        valueLabel.setJustificationType(juce::Justification::centred);
-        valueLabel.setColour(juce::Label::textColourId, juce::Colours::white.withAlpha(0.85f));
-        addAndMakeVisible(valueLabel);
-    }
-
-    void setCaption(const juce::String& text)
-    {
-        captionLabel.setText(text, juce::dontSendNotification);
-    }
-
-    juce::Slider& slider() noexcept { return knob; }
-    const juce::Slider& slider() const noexcept { return knob; }
-
-    juce::Label& value() noexcept { return valueLabel; }
-    const juce::Label& value() const noexcept { return valueLabel; }
-
-    void setTextColour(juce::Colour colour)
-    {
-        captionLabel.setColour(juce::Label::textColourId, colour);
-        valueLabel.setColour(juce::Label::textColourId, colour);
-    }
-
-    void resized() override
-    {
-        auto bounds = getLocalBounds();
-        auto captionArea = bounds.removeFromTop(16);
-        captionLabel.setBounds(captionArea);
-
-        auto valueArea = bounds.removeFromBottom(16);
-        valueLabel.setBounds(valueArea);
-
-        knob.setBounds(bounds.reduced(4));
-    }
-
-private:
-    juce::Label captionLabel;
-    juce::Slider knob;
-    juce::Label valueLabel;
-};
-
-class KnobGroupComponent : public juce::Component
-{
-public:
-    KnobGroupComponent(const juce::String& titleText = {}, juce::Colour accentColour = juce::Colours::white)
-        : title(titleText), accent(accentColour)
-    {
-        titleLabel.setText(titleText, juce::dontSendNotification);
-        titleLabel.setJustificationType(juce::Justification::left);
-        titleLabel.setColour(juce::Label::textColourId, juce::Colours::white);
-        titleLabel.setFont(juce::Font(juce::FontOptions(16.0f, juce::Font::bold)));
-        addAndMakeVisible(titleLabel);
-    }
-
-    void setAccentColour(juce::Colour newColour)
-    {
-        accent = newColour;
-        repaint();
-    }
-
-    void setTitle(const juce::String& newTitle)
-    {
-        title = newTitle;
-        titleLabel.setText(title, juce::dontSendNotification);
-    }
-
-    void setVisualComponent(juce::Component* component)
-    {
-        if (visualComponent == component)
-            return;
-
-        if (visualComponent != nullptr)
-            removeChildComponent(visualComponent);
-
-        visualComponent = component;
-
-        if (visualComponent != nullptr)
-            addAndMakeVisible(visualComponent);
-    }
-
-    void setHeaderComponent(juce::Component* component)
-    {
-        if (headerComponent == component)
-            return;
-
-        if (headerComponent != nullptr)
-            removeChildComponent(headerComponent);
-
-        headerComponent = component;
-
-        if (headerComponent != nullptr)
-        {
-            addAndMakeVisible(headerComponent);
-        }
-    }
-
-    void addFooterComponent(juce::Component& component)
-    {
-        footerComponents.push_back(&component);
-        addAndMakeVisible(component);
-    }
-
-    void addKnob(ParameterKnob& knob)
-    {
-        knobComponents.push_back(&knob);
-        addAndMakeVisible(knob);
-    }
-
-    void setKnobColumns(int columns) noexcept
-    {
-        knobColumns = std::max(1, columns);
-        resized();
-    }
-
-    void setVisualHeightRatio(float ratio) noexcept
-    {
-        visualHeightRatio = juce::jlimit(0.0f, 0.85f, ratio);
-        resized();
-    }
-
-    void paint(juce::Graphics& g) override
-    {
-        auto bounds = getLocalBounds().toFloat();
-        auto backgroundColour = accent.withAlpha(0.12f);
-        g.setColour(backgroundColour);
-        g.fillRoundedRectangle(bounds, 14.0f);
-
-        g.setColour(accent.withAlpha(isHovered ? 0.8f : 0.5f));
-        g.drawRoundedRectangle(bounds.reduced(0.5f), 14.0f, 1.5f);
-    }
-
-    void resized() override
-    {
-        auto bounds = getLocalBounds().reduced(12);
-
-        auto headerArea = bounds.removeFromTop(28);
-        auto titleArea = headerArea;
-
-        if (headerComponent != nullptr)
-        {
-            const int headerWidth = std::min(headerArea.getWidth() / 2, 140);
-            auto componentArea = headerArea.removeFromRight(headerWidth);
-            headerComponent->setBounds(componentArea);
-            titleArea = headerArea;
-        }
-
-        titleLabel.setBounds(titleArea.reduced(0, 0));
-
-        if (visualComponent != nullptr)
-        {
-            const int visualHeight = (int)std::round(bounds.getHeight() * visualHeightRatio);
-            auto visualArea = bounds.removeFromTop(visualHeight).reduced(4);
-            visualComponent->setBounds(visualArea);
-        }
-
-        if (!footerComponents.empty())
-        {
-            const int footerHeight = 24 * (int)footerComponents.size();
-            auto footerArea = bounds.removeFromBottom(footerHeight + 4);
-            footerArea.removeFromTop(4);
-
-            for (auto* comp : footerComponents)
-            {
-                if (comp != nullptr)
-                {
-                    auto row = footerArea.removeFromTop(24);
-                    comp->setBounds(row.removeFromLeft(row.getWidth()));
-                }
-            }
-        }
-
-        if (!knobComponents.empty())
-        {
-            const int columns = knobColumns > 0 ? knobColumns : std::max(1, (int)std::ceil(std::sqrt((double)knobComponents.size())));
-            const int rows = (int)std::ceil((double)knobComponents.size() / (double)columns);
-
-            auto knobArea = bounds;
-            const int rowHeight = rows > 0 ? knobArea.getHeight() / rows : knobArea.getHeight();
-
-            int index = 0;
-            for (int row = 0; row < rows; ++row)
-            {
-                auto rowArea = knobArea.removeFromTop(rowHeight);
-                if (row < rows - 1)
-                    knobArea.removeFromTop(6);
-
-                const int colWidth = columns > 0 ? rowArea.getWidth() / columns : rowArea.getWidth();
-
-                for (int col = 0; col < columns; ++col)
-                {
-                    if (index >= (int)knobComponents.size())
-                        break;
-
-                    auto cell = rowArea.removeFromLeft(colWidth);
-                    cell = cell.reduced(4);
-                    knobComponents[(size_t)index]->setBounds(cell);
-                    ++index;
-                }
-            }
-        }
-    }
-
-    void mouseEnter(const juce::MouseEvent&) override
-    {
-        isHovered = true;
-        repaint();
-    }
-
-    void mouseExit(const juce::MouseEvent&) override
-    {
-        isHovered = false;
-        repaint();
-    }
-
-private:
-    juce::String title;
-    juce::Colour accent;
-    juce::Label titleLabel;
-    juce::Component* headerComponent = nullptr;
-    juce::Component* visualComponent = nullptr;
-    std::vector<ParameterKnob*> knobComponents;
-    std::vector<juce::Component*> footerComponents;
-    int knobColumns = 3;
-    float visualHeightRatio = 0.35f;
-    bool isHovered = false;
-};
-
-class OscillatorPreviewComponent : public juce::Component
-{
-public:
-    void setWaveform(const std::vector<float>* data) noexcept { waveform = data; }
-
-    void paint(juce::Graphics& g) override
-    {
-        auto bounds = getLocalBounds().toFloat();
-        g.setColour(juce::Colours::black.withAlpha(0.45f));
-        g.fillRoundedRectangle(bounds, 10.0f);
-        g.setColour(juce::Colours::white.withAlpha(0.35f));
-        g.drawRoundedRectangle(bounds.reduced(0.5f), 10.0f, 1.2f);
-
-        if (waveform == nullptr || waveform->empty())
-            return;
-
-        juce::Path path;
-        const auto& data = *waveform;
-        const int N = (int)data.size();
-        const float width = bounds.getWidth();
-        const float height = bounds.getHeight();
-        const float centreY = bounds.getCentreY();
-
-        for (int i = 0; i < N; ++i)
-        {
-            const float x = bounds.getX() + (width * (float)i / (float)(N - 1));
-            const float sample = juce::jlimit(-1.0f, 1.0f, data[(size_t)i]);
-            const float y = centreY - sample * (height * 0.45f);
-            if (i == 0)
-                path.startNewSubPath(x, y);
-            else
-                path.lineTo(x, y);
-        }
-
-        g.setColour(juce::Colours::cyan.withAlpha(0.9f));
-        g.strokePath(path, juce::PathStrokeType(2.0f));
-    }
-
-private:
-    const std::vector<float>* waveform = nullptr;
-};
-
-class FilterResponseComponent : public juce::Component
-{
-public:
-    explicit FilterResponseComponent(MainComponent& ownerRef)
-        : owner(ownerRef)
-    {
-    }
-
-    void paint(juce::Graphics& g) override
-    {
-        auto bounds = getLocalBounds().toFloat();
-        g.setColour(juce::Colours::black.withAlpha(0.45f));
-        g.fillRoundedRectangle(bounds, 10.0f);
-        g.setColour(juce::Colours::white.withAlpha(0.35f));
-        g.drawRoundedRectangle(bounds.reduced(0.5f), 10.0f, 1.2f);
-
-        juce::Path response;
-        const int numPoints = std::max(64, (int)bounds.getWidth());
-        const double sr = std::max(44100.0, owner.getCurrentSampleRate());
-        const double cutoff = owner.getCutoffHz();
-        const double resonance = owner.getResonanceQ();
-        const auto type = owner.getFilterType();
-
-        for (int i = 0; i < numPoints; ++i)
-        {
-            const double norm = (double)i / (double)(numPoints - 1);
-            const double freq = 20.0 * std::pow(1000.0, norm * std::log10(sr / 20.0));
-            const double magnitude = getMagnitude(freq, sr, cutoff, resonance, type);
-            const float dB = juce::Decibels::gainToDecibels(magnitude, -60.0f);
-            const float y = juce::jmap(dB, -24.0f, 12.0f, bounds.getBottom() - 6.0f, bounds.getY() + 6.0f);
-            const float x = bounds.getX() + (float)norm * (bounds.getWidth());
-            if (i == 0)
-                response.startNewSubPath(x, y);
-            else
-                response.lineTo(x, y);
-        }
-
-        g.setColour(juce::Colours::yellow.withAlpha(0.9f));
-        g.strokePath(response, juce::PathStrokeType(2.0f));
-
-        const float cutoffX = (float)juce::jmap(std::log(cutoff), std::log(20.0), std::log(sr * 0.5), bounds.getX(), bounds.getRight());
-        g.setColour(juce::Colours::yellow.withAlpha(0.5f));
-        g.drawVerticalLine((int)cutoffX, bounds.getY(), bounds.getBottom());
-    }
-
-private:
-    static double getMagnitude(double freq, double sampleRate, double cutoff, double q, MainComponent::FilterType type)
-    {
-        const double w0 = juce::MathConstants<double>::twoPi * cutoff / sampleRate;
-        const double cosw0 = std::cos(w0);
-        const double sinw0 = std::sin(w0);
-        const double alpha = sinw0 / (2.0 * q);
-
-        double b0 = 0.0, b1 = 0.0, b2 = 0.0;
-        double a0 = 1.0, a1 = 0.0, a2 = 0.0;
-
-        switch (type)
-        {
-            case MainComponent::FilterType::BandPass:
-                b0 = alpha;
-                b1 = 0.0;
-                b2 = -alpha;
-                a0 = 1.0 + alpha;
-                a1 = -2.0 * cosw0;
-                a2 = 1.0 - alpha;
-                break;
-            case MainComponent::FilterType::HighPass:
-                b0 = (1.0 + cosw0) * 0.5;
-                b1 = -(1.0 + cosw0);
-                b2 = (1.0 + cosw0) * 0.5;
-                a0 = 1.0 + alpha;
-                a1 = -2.0 * cosw0;
-                a2 = 1.0 - alpha;
-                break;
-            case MainComponent::FilterType::Notch:
-                b0 = 1.0;
-                b1 = -2.0 * cosw0;
-                b2 = 1.0;
-                a0 = 1.0 + alpha;
-                a1 = -2.0 * cosw0;
-                a2 = 1.0 - alpha;
-                break;
-            case MainComponent::FilterType::LowPass:
-            default:
-                b0 = (1.0 - cosw0) * 0.5;
-                b1 = 1.0 - cosw0;
-                b2 = (1.0 - cosw0) * 0.5;
-                a0 = 1.0 + alpha;
-                a1 = -2.0 * cosw0;
-                a2 = 1.0 - alpha;
-                break;
-        }
-
-        const double omega = juce::MathConstants<double>::twoPi * freq / sampleRate;
-        const std::complex<double> z = std::exp(std::complex<double>(0.0, -omega));
-        const std::complex<double> z2 = std::exp(std::complex<double>(0.0, -2.0 * omega));
-        const std::complex<double> numerator = b0 + b1 * z + b2 * z2;
-        const std::complex<double> denominator = 1.0 + a1 * z + a2 * z2;
-        const double magnitude = std::abs(numerator / denominator);
-        return magnitude;
-    }
-
-    MainComponent& owner;
-};
-
-class EnvelopeGraphComponent : public juce::Component
-{
-public:
-    explicit EnvelopeGraphComponent(MainComponent& ownerRef) : owner(ownerRef) {}
-
-    void paint(juce::Graphics& g) override
-    {
-        auto bounds = getLocalBounds().toFloat();
-        g.setColour(juce::Colours::black.withAlpha(0.45f));
-        g.fillRoundedRectangle(bounds, 10.0f);
-        g.setColour(juce::Colours::white.withAlpha(0.35f));
-        g.drawRoundedRectangle(bounds.reduced(0.5f), 10.0f, 1.2f);
-
-        juce::Path envPath;
-        const float total = owner.getAttackMs() + owner.getDecayMs() + owner.getReleaseMs() + 1.0f;
-        const float attackX = owner.getAttackMs() / total;
-        const float decayX = owner.getDecayMs() / total;
-        const float releaseX = owner.getReleaseMs() / total;
-        const float sustain = owner.getSustainLevel();
-
-        auto start = bounds.getBottomLeft();
-        envPath.startNewSubPath(start);
-        envPath.lineTo(bounds.getX() + attackX * bounds.getWidth(), bounds.getY());
-        envPath.lineTo(bounds.getX() + (attackX + decayX) * bounds.getWidth(), bounds.getY() + (1.0f - sustain) * bounds.getHeight());
-        envPath.lineTo(bounds.getRight() - releaseX * bounds.getWidth(), bounds.getY() + (1.0f - sustain) * bounds.getHeight());
-        envPath.lineTo(bounds.getRight(), bounds.getBottom());
-
-        g.setColour(juce::Colours::orange);
-        g.strokePath(envPath, juce::PathStrokeType(2.0f));
-    }
-
-private:
-    MainComponent& owner;
-};
-
-class LfoPreviewComponent : public juce::Component
-{
-public:
-    explicit LfoPreviewComponent(MainComponent& ownerRef) : owner(ownerRef)
-    {
-        startTimerHz(24);
-    }
-
-    void paint(juce::Graphics& g) override
-    {
-        auto bounds = getLocalBounds().toFloat();
-        g.setColour(juce::Colours::black.withAlpha(0.45f));
-        g.fillRoundedRectangle(bounds, 10.0f);
-        g.setColour(juce::Colours::white.withAlpha(0.35f));
-        g.drawRoundedRectangle(bounds.reduced(0.5f), 10.0f, 1.2f);
-
-        juce::Path lfoPath;
-        const int points = std::max(32, (int)bounds.getWidth());
-        const float depth = owner.getLfoDepthAmount();
-
-        for (int i = 0; i < points; ++i)
-        {
-            const float norm = (float)i / (float)(points - 1);
-            const float angle = (norm * juce::MathConstants<float>::twoPi) + phase;
-            const float sample = owner.renderLfoShape(angle);
-            const float y = juce::jmap(sample * depth, -1.0f, 1.0f, bounds.getBottom() - 6.0f, bounds.getY() + 6.0f);
-            const float x = bounds.getX() + norm * bounds.getWidth();
-            if (i == 0)
-                lfoPath.startNewSubPath(x, y);
-            else
-                lfoPath.lineTo(x, y);
-        }
-
-        g.setColour(juce::Colours::blue);
-        g.strokePath(lfoPath, juce::PathStrokeType(2.0f));
-    }
-
-    void timerCallback()
-    {
-        phase += (float)juce::MathConstants<double>::twoPi * (owner.getLfoRateHz() / 60.0f) * 0.25f;
-        if (phase > juce::MathConstants<float>::twoPi)
-            phase -= juce::MathConstants<float>::twoPi;
-        repaint();
-    }
-
-private:
-    MainComponent& owner;
-    float phase = 0.0f;
-};
-
-class EffectIntensityMeter : public juce::Component
-{
-public:
-    explicit EffectIntensityMeter(MainComponent& ownerRef) : owner(ownerRef)
-    {
-        startTimerHz(30);
-    }
-
-    void paint(juce::Graphics& g) override
-    {
-        auto bounds = getLocalBounds().toFloat();
-        g.setColour(juce::Colours::black.withAlpha(0.45f));
-        g.fillRoundedRectangle(bounds, 10.0f);
-        g.setColour(juce::Colours::white.withAlpha(0.35f));
-        g.drawRoundedRectangle(bounds.reduced(0.5f), 10.0f, 1.2f);
-
-        const float metrics[4] =
-        {
-            owner.getCrushAmount(),
-            owner.getAutoPanAmount(),
-            owner.getDelayAmount(),
-            owner.getGlitchAmount()
-        };
-
-        const juce::String labels[4] = { "Distortion", "Chorus", "Delay", "Reverb" };
-
-        const float barWidth = bounds.getWidth() / 4.0f;
-
-        for (int i = 0; i < 4; ++i)
-        {
-            auto bar = bounds.removeFromLeft(barWidth);
-            if (i < 3)
-                bounds.removeFromLeft(2.0f);
-
-            const float value = juce::jlimit(0.0f, 1.0f, metrics[i]);
-            auto filled = bar.withY(bar.getBottom() - value * bar.getHeight());
-
-            g.setColour(juce::Colours::white.withAlpha(0.12f));
-            g.fillRect(bar);
-            g.setColour(juce::Colours::white.withAlpha(0.65f));
-            g.fillRect(filled);
-
-            g.setColour(juce::Colours::white.withAlpha(0.7f));
-            g.setFont(juce::Font(juce::FontOptions(12.0f)));
-            g.drawFittedText(labels[i], bar.toNearestInt(), juce::Justification::centredBottom, 1);
-        }
-    }
-
-    void timerCallback()
-    {
-        repaint();
-    }
-
-private:
-    MainComponent& owner;
-};
-
-class OutputMeterComponent : public juce::Component
-{
-public:
-    explicit OutputMeterComponent(MainComponent& ownerRef) : owner(ownerRef)
-    {
-        startTimerHz(60);
-    }
-
-    void paint(juce::Graphics& g) override
-    {
-        auto bounds = getLocalBounds().toFloat();
-        g.setColour(juce::Colours::black.withAlpha(0.45f));
-        g.fillRoundedRectangle(bounds, 10.0f);
-        g.setColour(juce::Colours::white.withAlpha(0.35f));
-        g.drawRoundedRectangle(bounds.reduced(0.5f), 10.0f, 1.2f);
-
-        const float level = juce::jlimit(0.0f, 1.0f, owner.getCurrentLevel());
-        const auto meter = bounds.withX(bounds.getX() + bounds.getWidth() * 0.2f)
-                                 .withWidth(bounds.getWidth() * 0.6f);
-        auto filled = meter.withY(meter.getBottom() - level * meter.getHeight());
-
-        g.setColour(juce::Colours::darkgrey.withAlpha(0.4f));
-        g.fillRect(meter);
-        g.setColour(juce::Colours::limegreen.withAlpha(0.7f));
-        g.fillRect(filled);
-    }
-
-    void timerCallback()
-    {
-        repaint();
-    }
-
-private:
-    MainComponent& owner;
-};
 
 //==============================================================================
 MainComponent::MainComponent()
@@ -612,6 +48,9 @@ MainComponent::MainComponent()
 
     midiRoll = std::make_unique<MidiRollComponent>();
     addAndMakeVisible (midiRoll.get());
+    oscVisualizer = std::make_unique<OscVisualizerComponent>();
+    addAndMakeVisible(oscVisualizer.get());
+
 
     initialiseUi();
     initialiseMidiInputs();
@@ -672,37 +111,12 @@ void MainComponent::updateFilterCoeffs(double cutoff, double Q)
     const double sw = std::sin(w0);
     const double alpha = sw / (2.0 * Q);
 
-    double b0 = 0.0;
-    double b1 = 0.0;
-    double b2 = 0.0;
+    double b0 = (1.0 - cw) * 0.5;
+    double b1 = 1.0 - cw;
+    double b2 = (1.0 - cw) * 0.5;
     double a0 = 1.0 + alpha;
     double a1 = -2.0 * cw;
     double a2 = 1.0 - alpha;
-
-    switch (filterType)
-    {
-        case FilterType::BandPass:
-            b0 = alpha;
-            b1 = 0.0;
-            b2 = -alpha;
-            break;
-        case FilterType::HighPass:
-            b0 = (1.0 + cw) * 0.5;
-            b1 = -(1.0 + cw);
-            b2 = (1.0 + cw) * 0.5;
-            break;
-        case FilterType::Notch:
-            b0 = 1.0;
-            b1 = -2.0 * cw;
-            b2 = 1.0;
-            break;
-        case FilterType::LowPass:
-        default:
-            b0 = (1.0 - cw) * 0.5;
-            b1 = 1.0 - cw;
-            b2 = (1.0 - cw) * 0.5;
-            break;
-    }
 
     juce::IIRCoefficients c(b0 / a0, b1 / a0, b2 / a0,
         1.0, a1 / a0, a2 / a0);
@@ -718,18 +132,17 @@ void MainComponent::updateFilterStatic()
 
 void MainComponent::resetSmoothers(double sampleRate)
 {
-    const double glideSeconds = monoModeEnabled ? juce::jlimit(0.001, 0.6, (double)glideTimeMs * 0.001) : 0.002;
-    const double gainRampSeconds = 0.02;
+    const double fastRampSeconds = 0.02;
     const double filterRampSeconds = 0.06;
     const double spatialRampSeconds = 0.1;
 
-    frequencySmoothed.reset(sampleRate, glideSeconds);
-    gainSmoothed.reset(sampleRate, gainRampSeconds);
+    frequencySmoothed.reset(sampleRate, fastRampSeconds);
+    gainSmoothed.reset(sampleRate, fastRampSeconds);
     cutoffSmoothed.reset(sampleRate, filterRampSeconds);
     resonanceSmoothed.reset(sampleRate, filterRampSeconds);
     stereoWidthSmoothed.reset(sampleRate, spatialRampSeconds);
     lfoDepthSmoothed.reset(sampleRate, spatialRampSeconds);
-    driveSmoothed.reset(sampleRate, gainRampSeconds);
+    driveSmoothed.reset(sampleRate, fastRampSeconds);
 
     frequencySmoothed.setCurrentAndTargetValue(targetFrequency);
     gainSmoothed.setCurrentAndTargetValue(outputGain);
@@ -741,8 +154,6 @@ void MainComponent::resetSmoothers(double sampleRate)
 
     filterL.reset();
     filterR.reset();
-
-    updateGlideSmoother();
 }
 
 void MainComponent::setTargetFrequency(float newFrequency, bool force)
@@ -875,28 +286,6 @@ inline float MainComponent::renderMorphSample(float ph, float morph, float normP
     return std::tanh(out * 1.1f);
 }
 
-float MainComponent::renderLfoShape(float phase) const noexcept
-{
-    float wrapped = std::fmod(phase, juce::MathConstants<float>::twoPi);
-    if (wrapped < 0.0f)
-        wrapped += juce::MathConstants<float>::twoPi;
-
-    const float norm = wrapped / juce::MathConstants<float>::twoPi;
-
-    switch (lfoShapeChoice)
-    {
-        case 1:
-        {
-            const float tri = 1.0f - 4.0f * std::abs(norm - 0.5f);
-            return juce::jlimit(-1.0f, 1.0f, tri);
-        }
-        case 2:
-            return norm < 0.5f ? 1.0f : -1.0f;
-        default:
-            return std::sin(wrapped);
-    }
-}
-
 void MainComponent::getNextAudioBlock(const juce::AudioSourceChannelInfo& bufferToFill)
 {
     if (bufferToFill.buffer == nullptr || bufferToFill.buffer->getNumChannels() == 0)
@@ -951,16 +340,11 @@ void MainComponent::getNextAudioBlock(const juce::AudioSourceChannelInfo& buffer
         const float width = stereoWidthSmoothed.getNextValue();
         const float baseCutoff = cutoffSmoothed.getNextValue();
         const float baseResonance = resonanceSmoothed.getNextValue();
-        const float rawEnv = amplitudeEnvelope.getNextSample();
-        const float ampEnv = envelopeToAmpEnabled ? rawEnv : 1.0f;
-        const float filterEnv = envelopeToFilterEnabled ? rawEnv : 0.0f;
+        const float ampEnv = amplitudeEnvelope.getNextSample();
         const float drive = driveSmoothed.getNextValue();
 
-        float lfoS = renderLfoShape(lfoPhase);
-        float vibrato = (lfoDestinationChoice == 0) ? (1.0f + depth * lfoS) : 1.0f;
-        float ampLfo = 1.0f;
-        if (lfoDestinationChoice == 2)
-            ampLfo = juce::jlimit(0.0f, 2.0f, juce::jmap(lfoS, -1.0f, 1.0f, 1.0f - depth, 1.0f + depth));
+        float lfoS = std::sin(lfoPhase);
+        float vibrato = 1.0f + (depth * lfoS);
         lfoPhase += lfoInc;
         if (lfoPhase >= juce::MathConstants<float>::twoPi) lfoPhase -= juce::MathConstants<float>::twoPi;
 
@@ -1020,12 +404,8 @@ void MainComponent::getNextAudioBlock(const juce::AudioSourceChannelInfo& buffer
         if (++filterUpdateCount >= filterUpdateStep)
         {
             filterUpdateCount = 0;
-            float filterModDepth = lfoCutModAmt;
-            if (lfoDestinationChoice == 1)
-                filterModDepth = juce::jlimit(0.0f, 1.5f, lfoCutModAmt + depth);
-
-            const double modFactor = std::pow(2.0, (double)filterModDepth * (double)lfoS);
-            const double envFactor = juce::jlimit(0.1, 4.0, 1.0 + (double)envFilterAmt * (double)filterEnv);
+            const double modFactor = std::pow(2.0, (double)lfoCutModAmt * (double)lfoS);
+            const double envFactor = juce::jlimit(0.1, 4.0, 1.0 + (double)envFilterAmt * (double)ampEnv);
             const double effCut = juce::jlimit(80.0, 14000.0, (double)baseCutoff * modFactor * envFactor);
             updateFilterCoeffs(effCut, (double)baseResonance);
         }
@@ -1055,9 +435,8 @@ void MainComponent::getNextAudioBlock(const juce::AudioSourceChannelInfo& buffer
             crushCounter = 0;
         }
 
-        const float ampValue = juce::jlimit(0.0f, 2.0f, ampEnv * ampLfo);
-        fL *= ampValue;
-        fR *= ampValue;
+        fL *= ampEnv;
+        fR *= ampEnv;
 
         float panMod = autoPanAmt * std::sin(autoPanPhase);
         autoPanPhase += autoPanInc;
@@ -1195,158 +574,7 @@ void MainComponent::paint(juce::Graphics& g)
 {
     g.fillAll(juce::Colours::black);
 
-    if (!osc3DRect.isEmpty())
-    {
-        auto visualBounds = osc3DRect.toFloat();
-        juce::ColourGradient background(
-            juce::Colour::fromRGB(8, 10, 22), visualBounds.getBottomLeft(),
-            juce::Colour::fromRGB(18, 32, 60), visualBounds.getTopRight(), false);
-        g.setGradientFill(background);
-        g.fillRoundedRectangle(visualBounds, 20.0f);
-
-        g.setColour(juce::Colours::white.withAlpha(0.08f));
-        g.drawRoundedRectangle(visualBounds, 20.0f, 1.2f);
-
-        auto sphereBounds = visualBounds.reduced(28.0f, 24.0f);
-        const float diameter = juce::jmin(sphereBounds.getWidth(), sphereBounds.getHeight());
-
-        if (diameter > 8.0f)
-        {
-            juce::Rectangle<float> sphereArea(
-                sphereBounds.getCentreX() - diameter * 0.5f,
-                sphereBounds.getCentreY() - diameter * 0.5f,
-                diameter,
-                diameter);
-
-            const float driveNorm = juce::jlimit(0.0f, 1.0f, driveAmount);
-            const float delayNorm = juce::jlimit(0.0f, 1.0f, delayAmount);
-            const float chaosNorm = juce::jlimit(0.0f, 1.0f, chaosAmount);
-
-            const float level = juce::jlimit(0.0f, 1.0f, smoothedLevel.load());
-            const float lowBand = juce::jlimit(0.0f, 1.2f, lowBandLevel.load());
-            const float midBand = juce::jlimit(0.0f, 1.2f, midBandLevel.load());
-            const float highBand = juce::jlimit(0.0f, 1.2f, highBandLevel.load());
-            const float delayFeedbackEnergy = juce::jlimit(0.0f, 1.0f, delayFeedbackVisual.load());
-            const float glitchEnergy = juce::jlimit(0.0f, 1.0f, glitchHoldVisual.load());
-
-            const float hueBase = std::fmod(juce::jmap(driveNorm, 0.0f, 1.0f, 0.62f, 0.02f) + 1.0f, 1.0f);
-            const float brightness = juce::jlimit(0.2f, 1.0f, juce::jmap(delayNorm, 0.0f, 1.0f, 0.35f, 0.92f) + level * 0.12f);
-            const float saturation = juce::jlimit(0.25f, 1.0f, juce::jmap(chaosNorm, 0.0f, 1.0f, 0.55f, 0.95f) + highBand * 0.05f);
-
-            juce::ColourGradient sphereGradient(
-                juce::Colour::fromHSV(hueBase, saturation, juce::jlimit(0.2f, 1.0f, brightness + level * 0.18f), 1.0f), sphereArea.getCentre(),
-                juce::Colour::fromHSV(std::fmod(hueBase + 0.11f, 1.0f), juce::jlimit(0.25f, 1.0f, saturation * 0.65f + midBand * 0.25f),
-                    juce::jlimit(0.15f, 1.0f, 0.25f + brightness * 0.65f), 1.0f),
-                sphereArea.getBottomRight(), true);
-            sphereGradient.addColour(0.18f, juce::Colour::fromHSV(std::fmod(hueBase + 0.18f, 1.0f),
-                juce::jlimit(0.3f, 1.0f, saturation * 0.85f + highBand * 0.25f),
-                juce::jlimit(0.2f, 1.0f, 0.3f + brightness * 0.55f + level * 0.12f), 1.0f));
-            sphereGradient.addColour(0.78f, juce::Colour::fromHSV(std::fmod(hueBase + 0.32f, 1.0f),
-                juce::jlimit(0.2f, 1.0f, saturation * 0.5f + delayFeedbackEnergy * 0.35f),
-                juce::jlimit(0.1f, 1.0f, 0.18f + brightness * 0.45f), 1.0f));
-
-            g.setGradientFill(sphereGradient);
-            g.fillEllipse(sphereArea);
-
-            g.setColour(juce::Colour::fromHSV(std::fmod(hueBase + 0.02f, 1.0f),
-                juce::jlimit(0.25f, 1.0f, saturation * 0.55f + midBand * 0.2f),
-                juce::jlimit(0.15f, 1.0f, 0.4f + brightness * 0.35f + level * 0.2f),
-                juce::jlimit(0.1f, 0.6f, 0.22f + level * 0.25f)));
-            g.drawEllipse(sphereArea, juce::jlimit(0.8f, 1.8f, 1.0f + highBand * 0.6f));
-
-            const auto centre = sphereArea.getCentre();
-            const float outerRadius = sphereArea.getWidth() * 0.5f;
-            const float activeRadius = outerRadius * juce::jlimit(0.75f, 1.22f, 0.88f + level * 0.35f);
-            const float innerRadius = juce::jlimit(outerRadius * 0.18f, activeRadius * 0.92f,
-                outerRadius * juce::jmap(juce::jlimit(0.0f, 1.0f, lowBand), 0.0f, 1.0f, 0.3f, 0.48f));
-
-            g.setColour(juce::Colour::fromHSV(std::fmod(hueBase + 0.07f, 1.0f),
-                juce::jlimit(0.2f, 1.0f, saturation * 0.45f + midBand * 0.3f),
-                juce::jlimit(0.1f, 0.6f, 0.18f + brightness * 0.25f + lowBand * 0.1f),
-                juce::jlimit(0.05f, 0.35f, 0.12f + level * 0.15f)));
-            g.drawEllipse(sphereArea.reduced(outerRadius * 0.18f), juce::jlimit(0.6f, 1.4f, 0.8f + midBand * 0.4f));
-
-            if (!waveformSnapshot.empty())
-            {
-                juce::Path waveformPath;
-                const size_t count = waveformSnapshot.size();
-                const double timeNow = juce::Time::getMillisecondCounterHiRes() * 0.001;
-
-                for (size_t i = 0; i < count; ++i)
-                {
-                    const float angle = juce::MathConstants<float>::twoPi * (float)i / (float)count;
-                    const float sample = juce::jlimit(-1.0f, 1.0f, waveformSnapshot[i]);
-                    const float breathing = std::sin(angle * 2.0f + (float)timeNow * 0.9f) * midBand * outerRadius * 0.05f;
-                    const float jitter = std::sin(angle * 5.0f + (float)timeNow * 3.0f) * highBand * outerRadius * (0.03f + glitchEnergy * 0.04f);
-                    const float warpedRadius = juce::jmap(sample, -1.0f, 1.0f, innerRadius, activeRadius) + breathing + jitter;
-                    const float radius = juce::jlimit(innerRadius * 0.7f, outerRadius * 1.2f, warpedRadius);
-                    const float x = centre.x + std::cos(angle) * radius;
-                    const float y = centre.y + std::sin(angle) * radius;
-
-                    if (i == 0)
-                        waveformPath.startNewSubPath(x, y);
-                    else
-                        waveformPath.lineTo(x, y);
-                }
-
-                waveformPath.closeSubPath();
-
-                const float trailHue = std::fmod(hueBase + 0.18f + highBand * 0.05f, 1.0f);
-                const float trailSat = juce::jlimit(0.25f, 1.0f, saturation * 0.7f + midBand * 0.4f + glitchEnergy * 0.2f);
-                const float trailVal = juce::jlimit(0.25f, 1.0f, 0.3f + brightness * 0.7f + level * 0.25f);
-
-                g.setColour(juce::Colour::fromHSV(trailHue, trailSat, trailVal, juce::jlimit(0.15f, 0.85f, 0.25f + level * 0.5f + lowBand * 0.15f)));
-                g.fillPath(waveformPath);
-
-                g.setColour(juce::Colour::fromHSV(std::fmod(trailHue + 0.02f, 1.0f),
-                    juce::jlimit(0.2f, 1.0f, trailSat * 0.85f + highBand * 0.25f),
-                    juce::jlimit(0.3f, 1.0f, trailVal * 0.85f + highBand * 0.2f), 1.0f));
-                g.strokePath(waveformPath, juce::PathStrokeType(juce::jlimit(1.1f, 3.6f, 1.3f + highBand * 2.0f + glitchEnergy * 0.7f)));
-
-                const float orbitRadius = outerRadius * juce::jlimit(1.05f, 1.6f, 1.2f + delayFeedbackEnergy * 0.45f);
-                const float orbitAngle = (float)(timeNow * 0.6);
-                const float orbitSkew = juce::jlimit(0.7f, 1.25f, 0.92f + midBand * 0.25f);
-                juce::Point<float> sat1(
-                    centre.x + std::sin(orbitAngle) * orbitRadius,
-                    centre.y + std::cos(orbitAngle) * orbitRadius * orbitSkew);
-
-                juce::Colour sat1Colour = juce::Colour::fromHSV(std::fmod(hueBase + 0.05f, 1.0f),
-                    juce::jlimit(0.35f, 1.0f, 0.65f + delayFeedbackEnergy * 0.35f),
-                    juce::jlimit(0.25f, 1.0f, 0.45f + brightness * 0.45f + level * 0.25f),
-                    juce::jlimit(0.15f, 0.9f, 0.28f + delayFeedbackEnergy * 0.55f));
-
-                g.setColour(sat1Colour.withAlpha(juce::jlimit(0.1f, 0.9f, sat1Colour.getFloatAlpha())));
-                g.fillEllipse(juce::Rectangle<float>(10.0f, 10.0f).withCentre(sat1));
-
-                juce::Path feedbackLink;
-                feedbackLink.startNewSubPath(centre);
-                feedbackLink.lineTo(sat1);
-                g.setColour(sat1Colour.withAlpha(juce::jlimit(0.08f, 0.6f, 0.2f + delayFeedbackEnergy * 0.45f)));
-                g.strokePath(feedbackLink, juce::PathStrokeType(1.2f));
-
-                const float glitchOrbit = outerRadius * juce::jlimit(1.2f, 1.85f, 1.35f + highBand * 0.35f + glitchEnergy * 0.2f);
-                const float glitchAngle = (float)(timeNow * 1.05);
-                const float jitterAmount = glitchEnergy * outerRadius * 0.16f;
-                juce::Point<float> sat2(
-                    centre.x + std::cos(glitchAngle) * glitchOrbit + std::sin((float)timeNow * 7.0f) * jitterAmount,
-                    centre.y + std::sin(glitchAngle) * glitchOrbit + std::cos((float)timeNow * 5.0f) * jitterAmount);
-
-                juce::Colour sat2Colour = juce::Colour::fromHSV(std::fmod(hueBase + 0.22f, 1.0f),
-                    juce::jlimit(0.35f, 1.0f, 0.75f + glitchEnergy * 0.3f + highBand * 0.25f),
-                    juce::jlimit(0.3f, 1.0f, 0.35f + brightness * 0.55f + highBand * 0.25f),
-                    juce::jlimit(0.15f, 0.95f, 0.22f + glitchEnergy * 0.65f));
-
-                g.setColour(sat2Colour.withAlpha(juce::jlimit(0.12f, 0.95f, sat2Colour.getFloatAlpha())));
-                g.fillEllipse(juce::Rectangle<float>(7.0f, 7.0f).withCentre(sat2));
-
-                juce::Path glitchLink;
-                glitchLink.startNewSubPath(centre);
-                glitchLink.lineTo(sat2);
-                g.setColour(sat2Colour.withAlpha(juce::jlimit(0.08f, 0.7f, 0.18f + glitchEnergy * 0.6f)));
-                g.strokePath(glitchLink, juce::PathStrokeType(1.0f));
-            }
-        }
-    }
+   
 
     if (!scopeRect.isEmpty())
     {
@@ -1379,8 +607,26 @@ void MainComponent::paint(juce::Graphics& g)
 void MainComponent::timerCallback()
 {
     captureWaveformSnapshot();
+
+    if (oscVisualizer)
+    {
+        oscVisualizer->setVisualData(
+            smoothedLevel.load(),
+            lowBandLevel.load(),
+            midBandLevel.load(),
+            highBandLevel.load(),
+            delayFeedbackVisual.load(),
+            glitchHoldVisual.load(),
+            driveAmount,
+            delayAmount,
+            chaosAmount,
+            waveformSnapshot
+        );
+    }
+
     repaint();
 }
+
 
 void MainComponent::captureWaveformSnapshot()
 {
@@ -1402,8 +648,6 @@ void MainComponent::captureWaveformSnapshot()
     }
 
     waveformSnapshot = std::move(snapshot);
-    if (oscillatorPreview != nullptr)
-        oscillatorPreview->repaint();
 }
 
 // ✅ FINAL DEFINITIVE FIX FOR ALL JUCE VERSIONS ✅
@@ -1444,48 +688,69 @@ void MainComponent::resized()
     const int bpmWidth = bpmAvailable > 0 ? std::min(bpmLabelWidth, bpmAvailable) : 0;
     bpmLabel.setBounds(buttonX, buttonY, bpmWidth, toolbarButtonHeight);
 
-    const int maxGroupsHeight = std::min(area.getHeight(), 360);
-    auto groupsArea = area.removeFromTop(maxGroupsHeight);
-    area.removeFromTop(8);
+    auto strip = area.removeFromTop(controlStripHeight);
+    const int knob = knobSize;
+    const int numKnobs = 23;
+    const int colWidth = strip.getWidth() / numKnobs;
 
-    if (oscillatorGroup && filterGroup && envelopeGroup && lfoGroup && effectsGroup && masterGroup)
+    struct Item { juce::Label* L; juce::Slider* S; juce::Label* V; };
+    Item items[numKnobs] = {
+        { &waveLabel, &waveKnob, &waveValue },
+        { &gainLabel, &gainKnob, &gainValue },
+        { &attackLabel, &attackKnob, &attackValue },
+        { &decayLabel, &decayKnob, &decayValue },
+        { &sustainLabel, &sustainKnob, &sustainValue },
+        { &widthLabel, &widthKnob, &widthValue },
+        { &pitchLabel, &pitchKnob, &pitchValue },
+        { &cutoffLabel, &cutoffKnob, &cutoffValue },
+        { &resonanceLabel, &resonanceKnob, &resonanceValue },
+        { &releaseLabel, &releaseKnob, &releaseValue },
+        { &lfoLabel, &lfoKnob, &lfoValue },
+        { &lfoDepthLabel, &lfoDepthKnob, &lfoDepthValue },
+        { &filterModLabel, &filterModKnob, &filterModValue },
+        { &lfoModeLabel, &lfoModeKnob, &lfoModeValue },
+        { &lfoStartLabel, &lfoStartKnob, &lfoStartValue },
+        { &driveLabel, &driveKnob, &driveValue },
+        { &crushLabel, &crushKnob, &crushValue },
+        { &subMixLabel, &subMixKnob, &subMixValue },
+        { &envFilterLabel, &envFilterKnob, &envFilterValue },
+        { &chaosLabel, &chaosKnob, &chaosValueLabel },
+        { &delayLabel, &delayKnob, &delayValue },
+        { &autoPanLabel, &autoPanKnob, &autoPanValue },
+        { &glitchLabel, &glitchKnob, &glitchValue }
+    };
+
+    const int labelH = 14;
+    const int valueH = 14;
+    const int labelY = strip.getY();
+    const int knobY = labelY + labelH + 2;
+    const int valueY = knobY + knob + 2;
+
+    for (int i = 0; i < numKnobs; ++i)
     {
-        juce::Grid grid;
-        grid.autoColumns = juce::Grid::TrackInfo(juce::Grid::Fr(1));
-        grid.autoRows = juce::Grid::TrackInfo(juce::Grid::Fr(1));
-        grid.templateColumns = { juce::Grid::TrackInfo(juce::Grid::Fr(3)),
-                                 juce::Grid::TrackInfo(juce::Grid::Fr(3)),
-                                 juce::Grid::TrackInfo(juce::Grid::Fr(2)) };
-        grid.templateRows = { juce::Grid::TrackInfo(juce::Grid::Fr(1)),
-                              juce::Grid::TrackInfo(juce::Grid::Fr(1)) };
-
-        grid.items.addArray({
-            juce::GridItem(*oscillatorGroup).withMargin(juce::GridItem::Margin(4)),
-            juce::GridItem(*filterGroup).withMargin(juce::GridItem::Margin(4)),
-            juce::GridItem(*envelopeGroup).withMargin(juce::GridItem::Margin(4)),
-            juce::GridItem(*lfoGroup).withMargin(juce::GridItem::Margin(4)),
-            juce::GridItem(*effectsGroup).withMargin(juce::GridItem::Margin(4)),
-            juce::GridItem(*masterGroup).withMargin(juce::GridItem::Margin(4))
-        });
-
-        grid.performLayout(groupsArea);
+        const int x = strip.getX() + i * colWidth + (colWidth - knob) / 2;
+        items[i].L->setBounds(x, labelY, knob, labelH);
+        items[i].S->setBounds(x, knobY, knob, knob);
+        items[i].V->setBounds(x, valueY, knob, valueH);
     }
 
     if (midiRoll)
-    {
-        const int rollHeight = juce::jlimit(160, 260, area.getHeight() / 3);
-        auto rollArea = area.removeFromTop(rollHeight);
-        midiRoll->setBounds(rollArea);
-        area.removeFromTop(8);
-    }
+{
+    auto rollHeight = 200;
+    auto rollArea = area.removeFromBottom(rollHeight);
+    midiRoll->setBounds(rollArea);
+}
 
-    int kbH = std::max(keyboardMinHeight, area.getHeight() / 4);
+    
+    int kbH = std::max(keyboardMinHeight, area.getHeight() / 5);
     auto kbArea = area.removeFromBottom(kbH);
-
+    
+    
     keyboardComponent.setBounds(kbArea);
 
-    float keyW = juce::jlimit(16.0f, 40.0f, kbArea.getWidth() / 20.0f);
+    float keyW = juce::jlimit(10.0f, 30.0f, kbArea.getWidth() / 36.0f);
     keyboardComponent.setKeyWidth(keyW);
+
 
     int desiredScopeHeight = kbArea.getHeight();
     int availableHeight = area.getHeight();
@@ -1503,7 +768,13 @@ void MainComponent::resized()
         scopeArea = {};
 
     scopeRect = scopeArea.isEmpty() ? juce::Rectangle<int>() : scopeArea.reduced(8, 6);
-    osc3DRect = area.reduced(12, 12);
+
+    if (oscVisualizer)
+        oscVisualizer->setBounds(area.reduced(12, 12));
+
+    
+    if (midiRoll)
+    midiRoll->setBounds(getLocalBounds().removeFromBottom(200));
 }
 
 
@@ -1595,502 +866,328 @@ void MainComponent::initialiseToolbar()
 
 void MainComponent::initialiseSliders()
 {
-    const juce::Colour oscColour { 0xFF4A90FF };
-    const juce::Colour filterColour { 0xFF4CE080 };
-    const juce::Colour envColour { 0xFFFF9F4A };
-    const juce::Colour lfoColour { 0xFF67C1FF };
-    const juce::Colour fxColour { 0xFFC46BFF };
-    const juce::Colour masterColour { 0xFFF5D96B };
-
-    oscillatorGroup = std::make_unique<KnobGroupComponent>("Oscillator", oscColour);
-    filterGroup = std::make_unique<KnobGroupComponent>("Filter", filterColour);
-    envelopeGroup = std::make_unique<KnobGroupComponent>("Envelope", envColour);
-    lfoGroup = std::make_unique<KnobGroupComponent>("LFO", lfoColour);
-    effectsGroup = std::make_unique<KnobGroupComponent>("Effects", fxColour);
-    masterGroup = std::make_unique<KnobGroupComponent>("Master", masterColour);
-
-    addAndMakeVisible(*oscillatorGroup);
-    addAndMakeVisible(*filterGroup);
-    addAndMakeVisible(*envelopeGroup);
-    addAndMakeVisible(*lfoGroup);
-    addAndMakeVisible(*effectsGroup);
-    addAndMakeVisible(*masterGroup);
-
-    oscillatorPreview = std::make_unique<OscillatorPreviewComponent>();
-    oscillatorPreview->setWaveform(&waveformSnapshot);
-    oscillatorGroup->setVisualComponent(oscillatorPreview.get());
-    oscillatorGroup->setVisualHeightRatio(0.45f);
-    oscillatorGroup->setKnobColumns(3);
-
-    filterGraph = std::make_unique<FilterResponseComponent>(*this);
-    filterGroup->setVisualComponent(filterGraph.get());
-    filterGroup->setVisualHeightRatio(0.45f);
-    filterGroup->setKnobColumns(2);
-
-    envelopeGraph = std::make_unique<EnvelopeGraphComponent>(*this);
-    envelopeGroup->setVisualComponent(envelopeGraph.get());
-    envelopeGroup->setVisualHeightRatio(0.5f);
-    envelopeGroup->setKnobColumns(2);
-
-    lfoPreview = std::make_unique<LfoPreviewComponent>(*this);
-    lfoGroup->setVisualComponent(lfoPreview.get());
-    lfoGroup->setVisualHeightRatio(0.45f);
-    lfoGroup->setKnobColumns(3);
-
-    effectsMeter = std::make_unique<EffectIntensityMeter>(*this);
-    effectsGroup->setVisualComponent(effectsMeter.get());
-    effectsGroup->setVisualHeightRatio(0.4f);
-    effectsGroup->setKnobColumns(2);
-
-    outputMeter = std::make_unique<OutputMeterComponent>(*this);
-    masterGroup->setVisualComponent(outputMeter.get());
-    masterGroup->setVisualHeightRatio(0.5f);
-    masterGroup->setKnobColumns(2);
-
-    auto configureKnob = [this](ParameterKnob& knob, const juce::String& caption)
+    configureRotarySlider(waveKnob);
+    waveKnob.setRange(0.0, 1.0);
+    waveKnob.setValue(0.0);
+    addAndMakeVisible(waveKnob);
+    configureCaptionLabel(waveLabel, "Waveform");
+    configureValueLabel(waveValue);
+    waveKnob.onValueChange = [this]
     {
-        knob.setCaption(caption);
-        knob.setTextColour(juce::Colours::white.withAlpha(0.9f));
-        configureRotarySlider(knob.slider());
+        waveMorph = (float)waveKnob.getValue();
+        waveValue.setText(juce::String(waveMorph, 2), juce::dontSendNotification);
     };
+    waveKnob.onValueChange();
 
-    // Oscillator knobs
-    configureKnob(waveKnob, "Waveform");
-    waveKnob.slider().setRange(0.0, 1.0);
-    waveKnob.slider().setTooltip("Blend oscillator waveform");
-    waveKnob.slider().onValueChange = [this]
+    configureRotarySlider(gainKnob);
+    gainKnob.setRange(0.0, 1.0);
+    gainKnob.setValue(outputGain);
+    addAndMakeVisible(gainKnob);
+    configureCaptionLabel(gainLabel, "Gain");
+    configureValueLabel(gainValue);
+    gainKnob.onValueChange = [this]
     {
-        waveMorph = (float)waveKnob.slider().getValue();
-        waveKnob.value().setText(juce::String(waveMorph, 2), juce::dontSendNotification);
-        waveKnob.slider().setTooltip("Waveform morph: " + waveKnob.value().getText());
-        if (oscillatorPreview != nullptr)
-            oscillatorPreview->repaint();
+        outputGain = (float)gainKnob.getValue();
+        gainSmoothed.setTargetValue(outputGain);
+        gainValue.setText(juce::String(outputGain * 100.0f, 0) + "%", juce::dontSendNotification);
     };
-    waveKnob.slider().setValue(waveMorph);
-    oscillatorGroup->addKnob(waveKnob);
+    gainKnob.onValueChange();
 
-    configureKnob(pitchKnob, "Tune");
-    pitchKnob.slider().setRange(40.0, 5000.0);
-    pitchKnob.slider().setSkewFactorFromMidPoint(440.0);
-    pitchKnob.slider().setTooltip("Oscillator tuning (Hz)");
-    pitchKnob.slider().onValueChange = [this]
+    configureRotarySlider(attackKnob);
+    attackKnob.setRange(0.0, 2000.0, 1.0);
+    attackKnob.setSkewFactorFromMidPoint(40.0);
+    attackKnob.setValue(attackMs);
+    addAndMakeVisible(attackKnob);
+    configureCaptionLabel(attackLabel, "Attack");
+    configureValueLabel(attackValue);
+    attackKnob.onValueChange = [this]
     {
-        setTargetFrequency((float)pitchKnob.slider().getValue());
-        const juce::String text = juce::String(targetFrequency, 1) + " Hz";
-        pitchKnob.value().setText(text, juce::dontSendNotification);
-        pitchKnob.slider().setTooltip("Tune: " + text);
+        attackMs = (float)attackKnob.getValue();
+        attackValue.setText(juce::String(attackMs, 0) + " ms", juce::dontSendNotification);
+        updateAmplitudeEnvelope();
     };
-    pitchKnob.slider().setValue(targetFrequency);
-    oscillatorGroup->addKnob(pitchKnob);
+    attackKnob.onValueChange();
 
-    configureKnob(widthKnob, "Spread");
-    widthKnob.slider().setRange(0.0, 2.0, 0.01);
-    widthKnob.slider().setTooltip("Stereo spread amount");
-    widthKnob.slider().onValueChange = [this]
+    configureRotarySlider(decayKnob);
+    decayKnob.setRange(5.0, 4000.0, 1.0);
+    decayKnob.setSkewFactorFromMidPoint(200.0);
+    decayKnob.setValue(decayMs);
+    addAndMakeVisible(decayKnob);
+    configureCaptionLabel(decayLabel, "Decay");
+    configureValueLabel(decayValue);
+    decayKnob.onValueChange = [this]
     {
-        stereoWidth = (float)widthKnob.slider().getValue();
+        decayMs = (float)decayKnob.getValue();
+        decayValue.setText(juce::String(decayMs, 0) + " ms", juce::dontSendNotification);
+        updateAmplitudeEnvelope();
+    };
+    decayKnob.onValueChange();
+
+    configureRotarySlider(sustainKnob);
+    sustainKnob.setRange(0.0, 1.0, 0.01);
+    sustainKnob.setValue(sustainLevel);
+    addAndMakeVisible(sustainKnob);
+    configureCaptionLabel(sustainLabel, "Sustain");
+    configureValueLabel(sustainValue);
+    sustainKnob.onValueChange = [this]
+    {
+        sustainLevel = (float)sustainKnob.getValue();
+        sustainValue.setText(juce::String(sustainLevel * 100.0f, 0) + "%", juce::dontSendNotification);
+        updateAmplitudeEnvelope();
+    };
+    sustainKnob.onValueChange();
+
+    configureRotarySlider(widthKnob);
+    widthKnob.setRange(0.0, 2.0, 0.01);
+    widthKnob.setValue(stereoWidth);
+    addAndMakeVisible(widthKnob);
+    configureCaptionLabel(widthLabel, "Width");
+    configureValueLabel(widthValue);
+    widthKnob.onValueChange = [this]
+    {
+        stereoWidth = (float)widthKnob.getValue();
         stereoWidthSmoothed.setTargetValue(stereoWidth);
-        const juce::String text = juce::String(stereoWidth, 2) + "x";
-        widthKnob.value().setText(text, juce::dontSendNotification);
-        widthKnob.slider().setTooltip("Spread: " + text);
+        widthValue.setText(juce::String(stereoWidth, 2) + "x", juce::dontSendNotification);
     };
-    widthKnob.slider().setValue(stereoWidth);
-    oscillatorGroup->addKnob(widthKnob);
+    widthKnob.onValueChange();
 
-    configureKnob(subMixKnob, "Morph Blend");
-    subMixKnob.slider().setRange(0.0, 1.0);
-    subMixKnob.slider().setTooltip("Blend sub and detuned layers");
-    subMixKnob.slider().onValueChange = [this]
+    configureRotarySlider(pitchKnob);
+    pitchKnob.setRange(40.0, 5000.0);
+    pitchKnob.setSkewFactorFromMidPoint(440.0);
+    pitchKnob.setValue(220.0);
+    addAndMakeVisible(pitchKnob);
+    configureCaptionLabel(pitchLabel, "Pitch");
+    configureValueLabel(pitchValue);
+    pitchKnob.onValueChange = [this]
     {
-        subMixAmount = (float)subMixKnob.slider().getValue();
-        const juce::String text = juce::String(subMixAmount * 100.0f, 0) + "%";
-        subMixKnob.value().setText(text, juce::dontSendNotification);
-        subMixKnob.slider().setTooltip("Morph blend: " + text);
+        setTargetFrequency((float)pitchKnob.getValue());
+        pitchValue.setText(juce::String(targetFrequency, 1) + " Hz", juce::dontSendNotification);
     };
-    subMixKnob.slider().setValue(subMixAmount);
-    oscillatorGroup->addKnob(subMixKnob);
+    pitchKnob.onValueChange();
 
-    configureKnob(chaosKnob, "Chaos");
-    chaosKnob.slider().setRange(0.0, 1.0);
-    chaosKnob.slider().setTooltip("Spectral chaos amount");
-    chaosKnob.slider().onValueChange = [this]
+    configureRotarySlider(cutoffKnob);
+    cutoffKnob.setRange(80.0, 10000.0, 1.0);
+    cutoffKnob.setSkewFactorFromMidPoint(1000.0);
+    cutoffKnob.setValue(cutoffHz);
+    addAndMakeVisible(cutoffKnob);
+    configureCaptionLabel(cutoffLabel, "Cutoff");
+    configureValueLabel(cutoffValue);
+    cutoffKnob.onValueChange = [this]
     {
-        chaosAmount = (float)chaosKnob.slider().getValue();
-        const juce::String text = juce::String(chaosAmount * 100.0f, 0) + "%";
-        chaosKnob.value().setText(text, juce::dontSendNotification);
-        chaosKnob.slider().setTooltip("Chaos: " + text);
-    };
-    chaosKnob.slider().setValue(chaosAmount);
-    oscillatorGroup->addKnob(chaosKnob);
-
-    // Filter section
-    configureKnob(cutoffKnob, "Cutoff");
-    cutoffKnob.slider().setRange(80.0, 10000.0, 1.0);
-    cutoffKnob.slider().setSkewFactorFromMidPoint(1000.0);
-    cutoffKnob.slider().setTooltip("Filter cutoff frequency");
-    cutoffKnob.slider().onValueChange = [this]
-    {
-        cutoffHz = (float)cutoffKnob.slider().getValue();
+        cutoffHz = (float)cutoffKnob.getValue();
         cutoffSmoothed.setTargetValue(cutoffHz);
-        const juce::String text = juce::String(cutoffHz, 1) + " Hz";
-        cutoffKnob.value().setText(text, juce::dontSendNotification);
-        cutoffKnob.slider().setTooltip("Cutoff: " + text);
+        cutoffValue.setText(juce::String(cutoffHz, 1) + " Hz", juce::dontSendNotification);
         filterUpdateCount = filterUpdateStep;
-        if (filterGraph != nullptr)
-            filterGraph->repaint();
     };
-    cutoffKnob.slider().setValue(cutoffHz);
-    filterGroup->addKnob(cutoffKnob);
+    cutoffKnob.onValueChange();
 
-    configureKnob(resonanceKnob, "Resonance");
-    resonanceKnob.slider().setRange(0.1, 10.0, 0.01);
-    resonanceKnob.slider().setSkewFactorFromMidPoint(0.707);
-    resonanceKnob.slider().setTooltip("Resonance (Q)");
-    resonanceKnob.slider().onValueChange = [this]
+    configureRotarySlider(resonanceKnob);
+    resonanceKnob.setRange(0.1, 10.0, 0.01);
+    resonanceKnob.setSkewFactorFromMidPoint(0.707);
+    resonanceKnob.setValue(resonanceQ);
+    addAndMakeVisible(resonanceKnob);
+    configureCaptionLabel(resonanceLabel, "Resonance (Q)");
+    configureValueLabel(resonanceValue);
+    resonanceKnob.onValueChange = [this]
     {
-        resonanceQ = (float)resonanceKnob.slider().getValue();
-        resonanceQ = std::max(0.1f, resonanceQ);
+        resonanceQ = (float)resonanceKnob.getValue();
+        if (resonanceQ < 0.1f) resonanceQ = 0.1f;
         resonanceSmoothed.setTargetValue(resonanceQ);
-        const juce::String text = juce::String(resonanceQ, 2);
-        resonanceKnob.value().setText(text, juce::dontSendNotification);
-        resonanceKnob.slider().setTooltip("Resonance: " + text);
+        resonanceValue.setText(juce::String(resonanceQ, 2), juce::dontSendNotification);
         filterUpdateCount = filterUpdateStep;
-        if (filterGraph != nullptr)
-            filterGraph->repaint();
     };
-    resonanceKnob.slider().setValue(resonanceQ);
-    filterGroup->addKnob(resonanceKnob);
+    resonanceKnob.onValueChange();
 
-    configureKnob(driveKnob, "Drive");
-    driveKnob.slider().setRange(0.0, 1.0);
-    driveKnob.slider().setTooltip("Filter drive / saturation");
-    driveKnob.slider().onValueChange = [this]
+    configureRotarySlider(releaseKnob);
+    releaseKnob.setRange(1.0, 4000.0, 1.0);
+    releaseKnob.setSkewFactorFromMidPoint(200.0);
+    releaseKnob.setValue(releaseMs);
+    addAndMakeVisible(releaseKnob);
+    configureCaptionLabel(releaseLabel, "Release");
+    configureValueLabel(releaseValue);
+    releaseKnob.onValueChange = [this]
     {
-        driveAmount = (float)driveKnob.slider().getValue();
-        driveSmoothed.setTargetValue(driveAmount);
-        const juce::String text = juce::String(driveAmount * 100.0f, 0) + "%";
-        driveKnob.value().setText(text, juce::dontSendNotification);
-        driveKnob.slider().setTooltip("Drive: " + text);
-    };
-    driveKnob.slider().setValue(driveAmount);
-    filterGroup->addKnob(driveKnob);
-
-    configureKnob(envFilterKnob, "Env Amount");
-    envFilterKnob.slider().setRange(-1.0, 1.0, 0.01);
-    envFilterKnob.slider().setTooltip("Envelope to cutoff amount");
-    envFilterKnob.slider().onValueChange = [this]
-    {
-        envFilterAmount = (float)envFilterKnob.slider().getValue();
-        const juce::String text = juce::String(envFilterAmount, 2);
-        envFilterKnob.value().setText(text, juce::dontSendNotification);
-        envFilterKnob.slider().setTooltip("Env->Filter: " + text);
-    };
-    envFilterKnob.slider().setValue(envFilterAmount);
-    filterGroup->addKnob(envFilterKnob);
-
-    filterTypeBox.clear(juce::dontSendNotification);
-    filterTypeBox.addItem("Low-pass", 1);
-    filterTypeBox.addItem("Band-pass", 2);
-    filterTypeBox.addItem("High-pass", 3);
-    filterTypeBox.addItem("Notch", 4);
-    filterTypeBox.setColour(juce::ComboBox::textColourId, juce::Colours::white);
-    filterTypeBox.setJustificationType(juce::Justification::centred);
-    filterTypeBox.setTooltip("Filter topology");
-    filterTypeBox.onChange = [this]
-    {
-        filterType = static_cast<FilterType>(juce::jlimit(0, 3, filterTypeBox.getSelectedId() - 1));
-        updateFilterStatic();
-        if (filterGraph != nullptr)
-            filterGraph->repaint();
-    };
-    filterTypeBox.setSelectedId(static_cast<int>(filterType) + 1, juce::dontSendNotification);
-    filterGroup->setHeaderComponent(&filterTypeBox);
-
-    // Envelope section
-    configureKnob(attackKnob, "Attack");
-    attackKnob.slider().setRange(0.0, 2000.0, 1.0);
-    attackKnob.slider().setSkewFactorFromMidPoint(40.0);
-    attackKnob.slider().setTooltip("Attack time");
-    attackKnob.slider().onValueChange = [this]
-    {
-        attackMs = (float)attackKnob.slider().getValue();
-        const juce::String text = juce::String(attackMs, 0) + " ms";
-        attackKnob.value().setText(text, juce::dontSendNotification);
-        attackKnob.slider().setTooltip("Attack: " + text);
+        releaseMs = (float)releaseKnob.getValue();
+        releaseValue.setText(juce::String(releaseMs, 0) + " ms", juce::dontSendNotification);
         updateAmplitudeEnvelope();
-        if (envelopeGraph != nullptr)
-            envelopeGraph->repaint();
     };
-    attackKnob.slider().setValue(attackMs);
-    envelopeGroup->addKnob(attackKnob);
+    releaseKnob.onValueChange();
 
-    configureKnob(decayKnob, "Decay");
-    decayKnob.slider().setRange(5.0, 4000.0, 1.0);
-    decayKnob.slider().setSkewFactorFromMidPoint(200.0);
-    decayKnob.slider().setTooltip("Decay time");
-    decayKnob.slider().onValueChange = [this]
+    configureRotarySlider(lfoKnob);
+    lfoKnob.setRange(0.05, 15.0);
+    lfoKnob.setValue(lfoRateHz);
+    addAndMakeVisible(lfoKnob);
+    configureCaptionLabel(lfoLabel, "LFO Rate");
+    configureValueLabel(lfoValue);
+    lfoKnob.onValueChange = [this]
     {
-        decayMs = (float)decayKnob.slider().getValue();
-        const juce::String text = juce::String(decayMs, 0) + " ms";
-        decayKnob.value().setText(text, juce::dontSendNotification);
-        decayKnob.slider().setTooltip("Decay: " + text);
-        updateAmplitudeEnvelope();
-        if (envelopeGraph != nullptr)
-            envelopeGraph->repaint();
+        lfoRateHz = (float)lfoKnob.getValue();
+        lfoValue.setText(juce::String(lfoRateHz, 2) + " Hz", juce::dontSendNotification);
     };
-    decayKnob.slider().setValue(decayMs);
-    envelopeGroup->addKnob(decayKnob);
+    lfoKnob.onValueChange();
 
-    configureKnob(sustainKnob, "Sustain");
-    sustainKnob.slider().setRange(0.0, 1.0, 0.01);
-    sustainKnob.slider().setTooltip("Sustain level");
-    sustainKnob.slider().onValueChange = [this]
+    configureRotarySlider(lfoDepthKnob);
+    lfoDepthKnob.setRange(0.0, 1.0);
+    lfoDepthKnob.setValue(lfoDepth);
+    addAndMakeVisible(lfoDepthKnob);
+    configureCaptionLabel(lfoDepthLabel, "LFO Depth");
+    configureValueLabel(lfoDepthValue);
+    lfoDepthKnob.onValueChange = [this]
     {
-        sustainLevel = (float)sustainKnob.slider().getValue();
-        const juce::String text = juce::String(sustainLevel * 100.0f, 0) + "%";
-        sustainKnob.value().setText(text, juce::dontSendNotification);
-        sustainKnob.slider().setTooltip("Sustain: " + text);
-        updateAmplitudeEnvelope();
-        if (envelopeGraph != nullptr)
-            envelopeGraph->repaint();
-    };
-    sustainKnob.slider().setValue(sustainLevel);
-    envelopeGroup->addKnob(sustainKnob);
-
-    configureKnob(releaseKnob, "Release");
-    releaseKnob.slider().setRange(1.0, 4000.0, 1.0);
-    releaseKnob.slider().setSkewFactorFromMidPoint(200.0);
-    releaseKnob.slider().setTooltip("Release time");
-    releaseKnob.slider().onValueChange = [this]
-    {
-        releaseMs = (float)releaseKnob.slider().getValue();
-        const juce::String text = juce::String(releaseMs, 0) + " ms";
-        releaseKnob.value().setText(text, juce::dontSendNotification);
-        releaseKnob.slider().setTooltip("Release: " + text);
-        updateAmplitudeEnvelope();
-        if (envelopeGraph != nullptr)
-            envelopeGraph->repaint();
-    };
-    releaseKnob.slider().setValue(releaseMs);
-    envelopeGroup->addKnob(releaseKnob);
-
-    envelopeToFilterToggle.setToggleState(envelopeToFilterEnabled, juce::dontSendNotification);
-    envelopeToFilterToggle.setColour(juce::ToggleButton::textColourId, juce::Colours::white);
-    envelopeToFilterToggle.onClick = [this]
-    {
-        envelopeToFilterEnabled = envelopeToFilterToggle.getToggleState();
-    };
-    envelopeGroup->addFooterComponent(envelopeToFilterToggle);
-
-    envelopeToAmpToggle.setToggleState(envelopeToAmpEnabled, juce::dontSendNotification);
-    envelopeToAmpToggle.setColour(juce::ToggleButton::textColourId, juce::Colours::white);
-    envelopeToAmpToggle.onClick = [this]
-    {
-        envelopeToAmpEnabled = envelopeToAmpToggle.getToggleState();
-    };
-    envelopeGroup->addFooterComponent(envelopeToAmpToggle);
-
-    // LFO section
-    configureKnob(lfoKnob, "Rate");
-    lfoKnob.slider().setRange(0.05, 15.0);
-    lfoKnob.slider().setTooltip("LFO rate");
-    lfoKnob.slider().onValueChange = [this]
-    {
-        lfoRateHz = (float)lfoKnob.slider().getValue();
-        const juce::String text = juce::String(lfoRateHz, 2) + " Hz";
-        lfoKnob.value().setText(text, juce::dontSendNotification);
-        lfoKnob.slider().setTooltip("LFO rate: " + text);
-        if (lfoPreview != nullptr)
-            lfoPreview->repaint();
-    };
-    lfoKnob.slider().setValue(lfoRateHz);
-    lfoGroup->addKnob(lfoKnob);
-
-    configureKnob(lfoDepthKnob, "Depth");
-    lfoDepthKnob.slider().setRange(0.0, 1.0);
-    lfoDepthKnob.slider().setTooltip("LFO depth");
-    lfoDepthKnob.slider().onValueChange = [this]
-    {
-        lfoDepth = (float)lfoDepthKnob.slider().getValue();
+        lfoDepth = (float)lfoDepthKnob.getValue();
         lfoDepthSmoothed.setTargetValue(lfoDepth);
-        const juce::String text = juce::String(lfoDepth, 2);
-        lfoDepthKnob.value().setText(text, juce::dontSendNotification);
-        lfoDepthKnob.slider().setTooltip("LFO depth: " + text);
-        if (lfoPreview != nullptr)
-            lfoPreview->repaint();
+        lfoDepthValue.setText(juce::String(lfoDepth, 2), juce::dontSendNotification);
     };
-    lfoDepthKnob.slider().setValue(lfoDepth);
-    lfoGroup->addKnob(lfoDepthKnob);
+    lfoDepthKnob.onValueChange();
 
-    configureKnob(filterModKnob, "Filter Mod");
-    filterModKnob.slider().setRange(0.0, 1.0, 0.001);
-    filterModKnob.slider().setTooltip("LFO modulation depth");
-    filterModKnob.slider().onValueChange = [this]
+    configureRotarySlider(filterModKnob);
+    filterModKnob.setRange(0.0, 1.0, 0.001);
+    filterModKnob.setValue(lfoCutModAmt);
+    addAndMakeVisible(filterModKnob);
+    configureCaptionLabel(filterModLabel, "Filter Mod");
+    configureValueLabel(filterModValue);
+    filterModKnob.onValueChange = [this]
     {
-        lfoCutModAmt = (float)filterModKnob.slider().getValue();
-        const juce::String text = juce::String(lfoCutModAmt, 2);
-        filterModKnob.value().setText(text, juce::dontSendNotification);
-        filterModKnob.slider().setTooltip("Filter mod: " + text);
+        lfoCutModAmt = (float)filterModKnob.getValue();
+        filterModValue.setText(juce::String(lfoCutModAmt, 2), juce::dontSendNotification);
     };
-    filterModKnob.slider().setValue(lfoCutModAmt);
-    lfoGroup->addKnob(filterModKnob);
+    filterModKnob.onValueChange();
 
-    configureKnob(lfoModeKnob, "Trigger");
-    lfoModeKnob.slider().setRange(0.0, 1.0, 1.0);
-    lfoModeKnob.slider().setTooltip("LFO retrigger mode");
-    lfoModeKnob.slider().onValueChange = [this]
+    configureRotarySlider(lfoModeKnob);
+    lfoModeKnob.setRange(0.0, 1.0, 1.0);
+    lfoModeKnob.setValue((lfoTriggerMode == LfoTriggerMode::FreeRun) ? 1.0 : 0.0);
+    addAndMakeVisible(lfoModeKnob);
+    configureCaptionLabel(lfoModeLabel, "LFO Mode");
+    configureValueLabel(lfoModeValue);
+    lfoModeKnob.onValueChange = [this]
     {
-        const bool freeRun = juce::approximatelyEqual(lfoModeKnob.slider().getValue(), 1.0);
+        const bool freeRun = juce::approximatelyEqual(lfoModeKnob.getValue(), 1.0);
         lfoTriggerMode = freeRun ? LfoTriggerMode::FreeRun : LfoTriggerMode::Retrigger;
-        const juce::String text = freeRun ? "Free" : "Retrig";
-        lfoModeKnob.value().setText(text, juce::dontSendNotification);
-        lfoModeKnob.slider().setTooltip("Trigger: " + text);
+        lfoModeValue.setText(freeRun ? "Loop" : "Retrig", juce::dontSendNotification);
         if (!freeRun)
             triggerLfo();
     };
-    lfoModeKnob.slider().setValue((lfoTriggerMode == LfoTriggerMode::FreeRun) ? 1.0 : 0.0);
-    lfoGroup->addKnob(lfoModeKnob);
+    lfoModeKnob.onValueChange();
 
-    configureKnob(lfoStartKnob, "Start Phase");
-    lfoStartKnob.slider().setRange(0.0, 1.0, 0.001);
-    lfoStartKnob.slider().setTooltip("LFO starting phase");
-    lfoStartKnob.slider().onValueChange = [this]
+    configureRotarySlider(lfoStartKnob);
+    lfoStartKnob.setRange(0.0, 1.0, 0.001);
+    lfoStartKnob.setValue(lfoStartPhaseNormalized);
+    addAndMakeVisible(lfoStartKnob);
+    configureCaptionLabel(lfoStartLabel, "LFO Start");
+    configureValueLabel(lfoStartValue);
+    lfoStartKnob.onValueChange = [this]
     {
-        lfoStartPhaseNormalized = (float)lfoStartKnob.slider().getValue();
-        const int degrees = juce::roundToInt(lfoStartPhaseNormalized * 360.0f);
-        const juce::String text = juce::String(degrees) + juce::String::charToString(0x00B0);
-        lfoStartKnob.value().setText(text, juce::dontSendNotification);
-        lfoStartKnob.slider().setTooltip("Start phase: " + text);
+        lfoStartPhaseNormalized = (float)lfoStartKnob.getValue();
+        const int degrees = juce::roundToInt(lfoStartPhaseNormalized * 360.0);
+        lfoStartValue.setText(juce::String(degrees) + juce::String::charToString(0x00B0), juce::dontSendNotification);
         triggerLfo();
     };
-    lfoStartKnob.slider().setValue(lfoStartPhaseNormalized);
-    lfoGroup->addKnob(lfoStartKnob);
+    lfoStartKnob.onValueChange();
 
-    lfoShapeBox.clear(juce::dontSendNotification);
-    lfoShapeBox.addItem("Sine", 1);
-    lfoShapeBox.addItem("Triangle", 2);
-    lfoShapeBox.addItem("Square", 3);
-    lfoShapeBox.setTooltip("LFO waveform");
-    lfoShapeBox.setColour(juce::ComboBox::textColourId, juce::Colours::white);
-    lfoShapeBox.setJustificationType(juce::Justification::centred);
-    lfoShapeBox.onChange = [this]
+    configureRotarySlider(driveKnob);
+    driveKnob.setRange(0.0, 1.0);
+    driveKnob.setValue(driveAmount);
+    addAndMakeVisible(driveKnob);
+    configureCaptionLabel(driveLabel, "Drive");
+    configureValueLabel(driveValue);
+    driveKnob.onValueChange = [this]
     {
-        lfoShapeChoice = juce::jlimit(0, 2, lfoShapeBox.getSelectedId() - 1);
-        if (lfoPreview != nullptr)
-            lfoPreview->repaint();
+        driveAmount = (float)driveKnob.getValue();
+        driveSmoothed.setTargetValue(driveAmount);
+        driveValue.setText(juce::String(driveAmount, 2), juce::dontSendNotification);
     };
-    lfoShapeBox.setSelectedId(lfoShapeChoice + 1, juce::dontSendNotification);
-    lfoGroup->setHeaderComponent(&lfoShapeBox);
+    driveKnob.onValueChange();
 
-    lfoDestinationBox.clear(juce::dontSendNotification);
-    lfoDestinationBox.addItem("Pitch", 1);
-    lfoDestinationBox.addItem("Filter", 2);
-    lfoDestinationBox.addItem("Amp", 3);
-    lfoDestinationBox.setTooltip("Primary modulation destination");
-    lfoDestinationBox.setColour(juce::ComboBox::textColourId, juce::Colours::white);
-    lfoDestinationBox.setJustificationType(juce::Justification::centred);
-    lfoDestinationBox.onChange = [this]
+    configureRotarySlider(crushKnob);
+    crushKnob.setRange(0.0, 1.0);
+    crushKnob.setValue(crushAmount);
+    addAndMakeVisible(crushKnob);
+    configureCaptionLabel(crushLabel, "Crush");
+    configureValueLabel(crushValue);
+    crushKnob.onValueChange = [this]
     {
-        lfoDestinationChoice = juce::jlimit(0, 2, lfoDestinationBox.getSelectedId() - 1);
+        crushAmount = (float)crushKnob.getValue();
+        crushValue.setText(juce::String(crushAmount * 100.0f, 0) + "%", juce::dontSendNotification);
     };
-    lfoDestinationBox.setSelectedId(lfoDestinationChoice + 1, juce::dontSendNotification);
-    lfoGroup->addFooterComponent(lfoDestinationBox);
+    crushKnob.onValueChange();
 
-    // Effects section
-    configureKnob(crushKnob, "Distortion");
-    crushKnob.slider().setRange(0.0, 1.0);
-    crushKnob.slider().setTooltip("Bit-crush intensity");
-    crushKnob.slider().onValueChange = [this]
+    configureRotarySlider(subMixKnob);
+    subMixKnob.setRange(0.0, 1.0);
+    subMixKnob.setValue(subMixAmount);
+    addAndMakeVisible(subMixKnob);
+    configureCaptionLabel(subMixLabel, "Sub Mix");
+    configureValueLabel(subMixValue);
+    subMixKnob.onValueChange = [this]
     {
-        crushAmount = (float)crushKnob.slider().getValue();
-        const juce::String text = juce::String(crushAmount * 100.0f, 0) + "%";
-        crushKnob.value().setText(text, juce::dontSendNotification);
-        crushKnob.slider().setTooltip("Distortion: " + text);
+        subMixAmount = (float)subMixKnob.getValue();
+        subMixValue.setText(juce::String(subMixAmount * 100.0f, 0) + "%", juce::dontSendNotification);
     };
-    crushKnob.slider().setValue(crushAmount);
-    effectsGroup->addKnob(crushKnob);
+    subMixKnob.onValueChange();
 
-    configureKnob(autoPanKnob, "Chorus");
-    autoPanKnob.slider().setRange(0.0, 1.0);
-    autoPanKnob.slider().setTooltip("Stereo modulation amount");
-    autoPanKnob.slider().onValueChange = [this]
+    configureRotarySlider(envFilterKnob);
+    envFilterKnob.setRange(-1.0, 1.0, 0.01);
+    envFilterKnob.setValue(envFilterAmount);
+    addAndMakeVisible(envFilterKnob);
+    configureCaptionLabel(envFilterLabel, "Env->Filter");
+    configureValueLabel(envFilterValue);
+    envFilterKnob.onValueChange = [this]
     {
-        autoPanAmount = (float)autoPanKnob.slider().getValue();
-        const juce::String text = juce::String(autoPanAmount * 100.0f, 0) + "%";
-        autoPanKnob.value().setText(text, juce::dontSendNotification);
-        autoPanKnob.slider().setTooltip("Chorus: " + text);
+        envFilterAmount = (float)envFilterKnob.getValue();
+        envFilterValue.setText(juce::String(envFilterAmount, 2), juce::dontSendNotification);
     };
-    autoPanKnob.slider().setValue(autoPanAmount);
-    effectsGroup->addKnob(autoPanKnob);
+    envFilterKnob.onValueChange();
 
-    configureKnob(delayKnob, "Delay");
-    delayKnob.slider().setRange(0.0, 1.0);
-    delayKnob.slider().setTooltip("Delay mix and feedback");
-    delayKnob.slider().onValueChange = [this]
+    configureRotarySlider(chaosKnob);
+    chaosKnob.setRange(0.0, 1.0);
+    chaosKnob.setValue(chaosAmount);
+    addAndMakeVisible(chaosKnob);
+    configureCaptionLabel(chaosLabel, "Chaos");
+    configureValueLabel(chaosValueLabel);
+    chaosKnob.onValueChange = [this]
     {
-        delayAmount = (float)delayKnob.slider().getValue();
-        const juce::String text = juce::String(delayAmount * 100.0f, 0) + "%";
-        delayKnob.value().setText(text, juce::dontSendNotification);
-        delayKnob.slider().setTooltip("Delay: " + text);
+        chaosAmount = (float)chaosKnob.getValue();
+        chaosValueLabel.setText(juce::String(chaosAmount * 100.0f, 0) + "%", juce::dontSendNotification);
     };
-    delayKnob.slider().setValue(delayAmount);
-    effectsGroup->addKnob(delayKnob);
+    chaosKnob.onValueChange();
 
-    configureKnob(glitchKnob, "Reverb");
-    glitchKnob.slider().setRange(0.0, 1.0);
-    glitchKnob.slider().setTooltip("Ambient glitch / space");
-    glitchKnob.slider().onValueChange = [this]
+    configureRotarySlider(delayKnob);
+    delayKnob.setRange(0.0, 1.0);
+    delayKnob.setValue(delayAmount);
+    addAndMakeVisible(delayKnob);
+    configureCaptionLabel(delayLabel, "Delay");
+    configureValueLabel(delayValue);
+    delayKnob.onValueChange = [this]
     {
-        glitchProbability = (float)glitchKnob.slider().getValue();
-        const juce::String text = juce::String(glitchProbability * 100.0f, 0) + "%";
-        glitchKnob.value().setText(text, juce::dontSendNotification);
-        glitchKnob.slider().setTooltip("Reverb: " + text);
+        delayAmount = (float)delayKnob.getValue();
+        delayValue.setText(juce::String(delayAmount * 100.0f, 0) + "%", juce::dontSendNotification);
     };
-    glitchKnob.slider().setValue(glitchProbability);
-    effectsGroup->addKnob(glitchKnob);
+    delayKnob.onValueChange();
 
-    // Master section
-    configureKnob(gainKnob, "Output");
-    gainKnob.slider().setRange(0.0, 1.0);
-    gainKnob.slider().setTooltip("Output gain");
-    gainKnob.slider().onValueChange = [this]
+    configureRotarySlider(autoPanKnob);
+    autoPanKnob.setRange(0.0, 1.0);
+    autoPanKnob.setValue(autoPanAmount);
+    addAndMakeVisible(autoPanKnob);
+    configureCaptionLabel(autoPanLabel, "Auto-Pan");
+    configureValueLabel(autoPanValue);
+    autoPanKnob.onValueChange = [this]
     {
-        outputGain = (float)gainKnob.slider().getValue();
-        gainSmoothed.setTargetValue(outputGain);
-        const juce::String text = juce::String(outputGain * 100.0f, 0) + "%";
-        gainKnob.value().setText(text, juce::dontSendNotification);
-        gainKnob.slider().setTooltip("Output: " + text);
+        autoPanAmount = (float)autoPanKnob.getValue();
+        autoPanValue.setText(juce::String(autoPanAmount * 100.0f, 0) + "%", juce::dontSendNotification);
     };
-    gainKnob.slider().setValue(outputGain);
-    masterGroup->addKnob(gainKnob);
+    autoPanKnob.onValueChange();
 
-    configureKnob(glideKnob, "Glide");
-    glideKnob.slider().setRange(0.0, 250.0, 1.0);
-    glideKnob.slider().setSkewFactorFromMidPoint(40.0);
-    glideKnob.slider().setTooltip("Portamento time");
-    glideKnob.slider().onValueChange = [this]
+    configureRotarySlider(glitchKnob);
+    glitchKnob.setRange(0.0, 1.0);
+    glitchKnob.setValue(glitchProbability);
+    addAndMakeVisible(glitchKnob);
+    configureCaptionLabel(glitchLabel, "Glitch");
+    configureValueLabel(glitchValue);
+    glitchKnob.onValueChange = [this]
     {
-        glideTimeMs = (float)glideKnob.slider().getValue();
-        const juce::String text = juce::String(glideTimeMs, 0) + " ms";
-        glideKnob.value().setText(text, juce::dontSendNotification);
-        glideKnob.slider().setTooltip("Glide: " + text);
-        updateGlideSmoother();
+        glitchProbability = (float)glitchKnob.getValue();
+        glitchValue.setText(juce::String(glitchProbability * 100.0f, 0) + "%", juce::dontSendNotification);
     };
-    glideKnob.slider().setValue(glideTimeMs);
-    masterGroup->addKnob(glideKnob);
-    glideKnob.setEnabled(monoModeEnabled);
-    glideKnob.slider().setEnabled(monoModeEnabled);
-
-    monoToggle.setToggleState(monoModeEnabled, juce::dontSendNotification);
-    monoToggle.setColour(juce::ToggleButton::textColourId, juce::Colours::white);
-    monoToggle.onClick = [this]
-    {
-        monoModeEnabled = monoToggle.getToggleState();
-        glideKnob.setEnabled(monoModeEnabled);
-        glideKnob.slider().setEnabled(monoModeEnabled);
-        updateGlideSmoother();
-    };
-    masterGroup->addFooterComponent(monoToggle);
+    glitchKnob.onValueChange();
 }
 
 void MainComponent::initialiseToggle()
@@ -2143,14 +1240,19 @@ void MainComponent::configureRotarySlider(juce::Slider& slider)
         juce::MathConstants<float>::pi * 2.8f, true);
 }
 
-void MainComponent::updateGlideSmoother()
+void MainComponent::configureCaptionLabel(juce::Label& label, const juce::String& text)
 {
-    const double sr = currentSR > 0.0 ? currentSR : 44100.0;
-    const double seconds = monoModeEnabled
-        ? juce::jlimit(0.001, 0.6, (double)glideTimeMs * 0.001)
-        : 0.002;
-    frequencySmoothed.reset(sr, seconds);
-    frequencySmoothed.setCurrentAndTargetValue(targetFrequency);
+    label.setText(text, juce::dontSendNotification);
+    label.setJustificationType(juce::Justification::centred);
+    label.setColour(juce::Label::textColourId, juce::Colours::white);
+    addAndMakeVisible(label);
+}
+
+void MainComponent::configureValueLabel(juce::Label& label)
+{
+    label.setJustificationType(juce::Justification::centred);
+    label.setColour(juce::Label::textColourId, juce::Colours::white);
+    addAndMakeVisible(label);
 }
 
 void MainComponent::updateAmplitudeEnvelope()

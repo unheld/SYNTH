@@ -8,6 +8,10 @@
       <FILE id="coOmAJ" name="MidiRollComponent.h" compile="0" resource="0"
             file="Source/MidiRollComponent.h"/>
       <FILE id="reBLKK" name="MainComponent.h" compile="0" resource="0" file="Source/MainComponent.h"/>
+      <FILE id="qmNVTs" name="OscVisualizerComponent.cpp" compile="1" resource="0"
+            file="Source/OscVisualizerComponent.cpp"/>
+      <FILE id="NgdDol" name="OscVisualizerComponent.h" compile="0" resource="0"
+            file="Source/OscVisualizerComponent.h"/>
       <FILE id="XiBPtf" name="MidiRollComponent.cpp" compile="1" resource="0"
             file="Source/MidiRollComponent.cpp"/>
       <FILE id="QUIjtw" name="MainComponent.cpp" compile="1" resource="0"

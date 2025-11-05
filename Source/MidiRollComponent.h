@@ -37,13 +37,13 @@ public:
 
 private:
     // Piano roll configuration
-    static constexpr int    kMinNote          = 36;        // C2
+    static constexpr int    kMinNote          = 0;        // C-1
     static constexpr int    kMaxNote          = 84;        // C6
     static constexpr int    kNoteHeight       = 18;
     static constexpr double kMinLoopBeats     = 4.0;       // 1 bar @ 4/4
     static constexpr double kMaxLoopBeats     = 32.0;      // 8 bars @ 4/4
     static constexpr int    kTopMargin        = 4;
-    static constexpr int    kLeftMargin       = 40;
+    static constexpr int    kLeftMargin       = 24;
 
     std::vector<Note> notes;
     mutable juce::SpinLock noteMutex;
